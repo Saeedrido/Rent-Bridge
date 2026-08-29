@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Button } from '../../../components/ui'
 import { ProgressIndicator } from './ProgressIndicator'
@@ -67,7 +67,14 @@ export function KycVerificationPage() {
   const location = useLocation()
 
   useEffect(() => {
-    const roleKey = Object.keys(ROLES).find(k => ROLES[k] === role) || 'tenant'
+    //const roleKey = Object.keys(ROLES).find(k => ROLES[k] === role) || 'tenant'
+    //const roleLower = roleKey.toLowerCase()
+    //let dashboardPath = '/dashboard'
+    //if (roleLower === 'landlord') dashboardPath = '/dashboard/landlord'
+    //else if (roleLower === 'caretaker') dashboardPath = '/dashboard/caretaker'
+    //else if (roleLower === 'lawyer') dashboardPath = '/dashboard/lawyer'
+    //else if (roleLower === 'tenant') dashboardPath = '/dashboard'
+    const roleKey = role?.id ?? 'tenant'
     const roleLower = roleKey.toLowerCase()
     let dashboardPath = '/dashboard'
     if (roleLower === 'landlord') dashboardPath = '/dashboard/landlord'
