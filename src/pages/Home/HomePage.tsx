@@ -13,7 +13,7 @@ export default function HomePage() {
         title="Rent Bridge — Verified Homes for Rent & Sale in Nigeria"
         description="Rent Bridge is a Nigerian property marketplace with NIN-verified landlords, lawyer-reviewed agreements and verified listings. Rent or buy without agent wahala."
         path="/"
-        image="/logo.png"
+        image="/rentbridge-logo.png"
       />
       <Hero />
       <TrustBar />

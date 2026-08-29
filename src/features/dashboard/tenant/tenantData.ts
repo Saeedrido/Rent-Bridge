@@ -27,10 +27,6 @@ export interface Payment {
   description: string
 }
 
-export interface SavedProperty extends DashboardProperty {
-  savedAt: string
-}
-
 export const tenantInspections: Inspection[] = [
   {
     id: 'insp1',
@@ -67,7 +63,7 @@ export const tenantInspections: Inspection[] = [
   },
 ]
 
-export const tenantPayments = [
+export const tenantPayments: Payment[] = [
   {
     id: 'pay1',
     type: 'legal' as const,
@@ -111,7 +107,7 @@ export const tenantPayments = [
   },
 ]
 
-export const initialSavedProperties = [
+export const initialSavedProperties: SavedProperty[] = [
   {
     id: 'd1',
     slug: '2-bedroom-flat-newly-serviced-sabo-yaba',
@@ -214,7 +210,7 @@ export function getAgreementStatus(status: string) {
   }
 }
 
-export const tenantAgreements = [
+export const tenantAgreements: TenantAgreement[] = [
   {
     id: 'agr1',
     propertyId: 'd1',

@@ -1,31 +1,9 @@
-import { useState } from 'react'
-import { PaymentsIcon } from '../components/icons'
-import { ChevronRightIcon, CalendarIcon, LockIcon } from '../roleDashboards/shared'
+import { ChevronRightIcon, LockIcon } from '../roleDashboards/shared'
 import { PageHeading, StatusPill, cn } from '../roleDashboards/shared'
 import { formatPrice } from './tenantUtils'
-import { tenantPayments, getPaymentStatusBadge, getPaymentTypeLabel, type Payment } from './tenantData'
+import { tenantPayments, getPaymentStatusBadge } from './tenantData'
 
-interface PaymentsPageProps {
-  currentProperty?: {
-    id: string
-    title: string
-    location: string
-    price: number
-  }
-}
-
-export function TenantPaymentsPage({ currentProperty }: PaymentsPageProps) {
-  const [payments] = useState(tenantPayments)
-  const [isPaying, setIsPaying] = useState(false)
-
-  const rentAmount = 1400000
-  const commission = Math.round(rentAmount * 0.05)
-  const legalFee = 45000
-  const cautionFee = 140000
-  const totalAmount = rentAmount + commission + legalFee + cautionFee
-
-  const paymentHistory = tenantPayments.filter(p => p.status !== 'awaiting')
-
+export function TenantPaymentsPage() {
   return (
     <div className="px-[clamp(16px,4vw,40px)]">
       <PageHeading title="Payments & escrow" />
@@ -74,10 +52,10 @@ export function TenantPaymentsPage({ currentProperty }: PaymentsPageProps) {
               </div>
 
               <button
+                type="button"
                 className="w-full mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark"
-                disabled={isPaying}
               >
-                {isPaying ? 'Processing...' : 'Pay into Escrow'}
+                Pay into Escrow
               </button>
             </div>
 
@@ -137,9 +115,4 @@ export function TenantPaymentsPage({ currentProperty }: PaymentsPageProps) {
       </div>
     </div>
   )
-}
-
-function TenantPaymentsPageWithState({ payments: initialPayments }: { payments: typeof tenantPayments }) {
-  const [payments] = useState(initialPayments)
-  return <TenantPaymentsPage currentProperty={{ id: 'd1', title: '2-bedroom flat, newly serviced', location: 'Sabo, Yaba', price: 1400000 }} />
 }

@@ -6,12 +6,10 @@ import { PropertyGrid } from '../../features/dashboard/components/PropertyGrid'
 import { TenantInspectionsPage } from '../../features/dashboard/tenant/TenantInspectionsPage2'
 import { TenantPaymentsPage } from '../../features/dashboard/tenant/TenantPaymentsPage'
 import { TenantSavedPage } from '../../features/dashboard/tenant/TenantSavedPage'
-import { initialSavedProperties, type SavedProperty, tenantInspections, tenantAgreements, getAgreementStatus } from './tenant/tenantData'
+import { initialSavedProperties, type SavedProperty, tenantAgreements, getAgreementStatus } from './tenant/tenantData'
 import { useLocation } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { StatusPill, ToastProvider } from '@/features/dashboard/roleDashboards/shared'
-
-type TenantTab = 'home' | 'saved' | 'inspections' | 'agreement' | 'payments' | 'profile'
 
 export function TenantDashboard() {
   const [location, setLocation] = useState('')
@@ -103,9 +101,6 @@ export function TenantDashboard() {
           <TenantSavedPage
             savedProperties={savedProperties}
             onRemoveFromSaved={handleToggleSave}
-            onPropertyClick={(property) => {
-              // Navigate to property details - handled by link in PropertyCard
-            }}
             onToggleSave={handleToggleSave}
           />
         )

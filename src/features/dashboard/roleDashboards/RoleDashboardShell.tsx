@@ -164,7 +164,7 @@ export function RoleDashboardShell({
           </div>
         </header>
 
-        <main className="px-[clamp(16px,4vw,40px)] pb-20 pt-32 md:pt-36">
+        <main className="px-[clamp(16px,4vw,40px)] pb-20 pt-[126px] md:pt-[128px]">
           <div key={active} className="anim-rise">
             {children}
           </div>

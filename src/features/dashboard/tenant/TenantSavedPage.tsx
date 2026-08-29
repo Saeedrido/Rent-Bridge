@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react'
-import { HeartIcon, ChevronLeftIcon } from '../components/icons'
-import { PageHeading, EmptyState, cn, formatPrice } from '../roleDashboards/shared'
-import { initialSavedProperties, type SavedProperty } from './tenantData'
+import { HeartIcon } from '../components/icons'
+import { PageHeading, EmptyState, useToast } from '../roleDashboards/shared'
+import type { SavedProperty } from './tenantData'
 import type { DashboardProperty } from '../../dashboard/data/dashboardProperties'
-import { useToast } from '../roleDashboards/shared'
 
 interface SavedPageProps {
   savedProperties: SavedProperty[]

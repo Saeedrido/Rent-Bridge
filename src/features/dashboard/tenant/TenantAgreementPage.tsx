@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { ChevronRightIcon, ChevronLeftIcon, AlertTriangleIcon, InfoIcon, ShieldCheckIcon, PenIcon, AlertCircleIcon } from '../components/icons'
+import { ChevronRightIcon, AlertTriangleIcon, InfoIcon, ShieldCheckIcon, PenIcon, AlertCircleIcon } from '../components/icons'
 import { PageHeading, StatusPill, cn, formatPrice } from '../roleDashboards/shared'
-import { tenantAgreements, type TenantAgreement } from './tenantData'
+import { tenantAgreements } from './tenantData'
 
 export function TenantAgreementPage() {
   const { id } = useParams<{ id: string }>()
@@ -346,7 +345,3 @@ export function TenantAgreementPage() {
   )
 }
 
-export function TenantAgreementPageWithState({ agreement: initialAgreement }: { agreement: typeof tenantAgreements[0] }) {
-  const [agreement] = useState(initialAgreement)
-  return <TenantAgreementPage />
-}

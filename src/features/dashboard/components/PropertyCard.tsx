@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import { PropertyImage } from '../../../components/common'
 import { formatNaira } from '../../../utils/format'
 import type { DashboardProperty } from '../data/dashboardProperties'
 import { CheckIcon, HeartIcon } from './icons'

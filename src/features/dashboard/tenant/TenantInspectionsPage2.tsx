@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PageHeading, EmptyState } from '../roleDashboards/shared'
-import { tenantInspections, type Inspection } from './tenantData'
+import { tenantInspections } from './tenantData'
 import { InspectionCard } from './InspectionCard'
 
 export function TenantInspectionsPage() {
@@ -38,9 +38,4 @@ export function TenantInspectionsPage() {
       </div>
     </div>
   )
-}
-
-export function TenantInspectionsPageWithState({ inspections: initialInspections }: { inspections: typeof tenantInspections }) {
-  const [inspections] = useState(initialInspections)
-  return <TenantInspectionsPage />
 }
