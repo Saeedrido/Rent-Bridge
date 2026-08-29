@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.rentbridge.com.ng/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/buy</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/rent</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/login</loc><priority>0.3</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/register</loc><priority>0.3</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/serviced-2-bedroom-flat-sabo-yaba</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/spacious-3-bedroom-apartment-ogudu</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/serviced-mini-flat-surulere</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/modern-4-bedroom-duplex-lekki</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/affordable-2-bedroom-flat-gbagada</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/luxury-3-bedroom-apartment-ikoyi</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/cozy-studio-apartment-yaba</loc><priority>0.7</priority></url>
+  <url><loc>https://www.rentbridge.com.ng/properties/family-5-bedroom-house-abuja</loc><priority>0.7</priority></url>
+</urlset>
