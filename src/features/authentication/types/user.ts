@@ -1,4 +1,4 @@
-export type UserRole = 'tenant' | 'landlord' | 'agent' | 'lawyer'
+export type UserRole = 'tenant' | 'landlord' | 'caretaker' | 'lawyer'
 
 export interface User {
   id: string

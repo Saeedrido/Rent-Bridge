@@ -1,9 +1,23 @@
-import { useState, useEffect, ReactNode } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useState, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '../../../components/ui'
 import { ProgressIndicator } from './ProgressIndicator'
 import { ROLES } from './roles'
 import { getOnboarding } from '../onboardingStore'
+
+function getDashboardPath(roleId: string) {
+  switch (roleId) {
+    case 'landlord':
+      return '/dashboard/landlord'
+    case 'caretaker':
+      return '/dashboard/caretaker'
+    case 'lawyer':
+      return '/dashboard/lawyer'
+    case 'tenant':
+    default:
+      return '/dashboard'
+  }
+}
 
 function VerificationCard({
   icon,
@@ -64,25 +78,6 @@ export function KycVerificationPage() {
   const [ownershipVerified, setOwnershipVerified] = useState(false)
   const [selfieVerified, setSelfieVerified] = useState(false)
   const navigate = useNavigate()
-  const location = useLocation()
-
-  useEffect(() => {
-    //const roleKey = Object.keys(ROLES).find(k => ROLES[k] === role) || 'tenant'
-    //const roleLower = roleKey.toLowerCase()
-    //let dashboardPath = '/dashboard'
-    //if (roleLower === 'landlord') dashboardPath = '/dashboard/landlord'
-    //else if (roleLower === 'caretaker') dashboardPath = '/dashboard/caretaker'
-    //else if (roleLower === 'lawyer') dashboardPath = '/dashboard/lawyer'
-    //else if (roleLower === 'tenant') dashboardPath = '/dashboard'
-    const roleKey = role?.id ?? 'tenant'
-    const roleLower = roleKey.toLowerCase()
-    let dashboardPath = '/dashboard'
-    if (roleLower === 'landlord') dashboardPath = '/dashboard/landlord'
-    else if (roleLower === 'caretaker') dashboardPath = '/dashboard/caretaker'
-    else if (roleLower === 'lawyer') dashboardPath = '/dashboard/lawyer'
-    else if (roleLower === 'tenant') dashboardPath = '/dashboard'
-    if (location.pathname !== dashboardPath) navigate(dashboardPath)
-  }, [role, location.pathname, navigate])
 
   return (
     <div className="min-h-screen bg-[#F5F3EE] px-4 py-10">
@@ -158,7 +153,7 @@ export function KycVerificationPage() {
               fullWidth
               variant="primary"
               disabled={!(ninVerified && ownershipVerified && selfieVerified)}
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(getDashboardPath(role.id))}
             >
               Continue
             </Button>

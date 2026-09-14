@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { HeartOutlineIcon, HouseIcon, PersonIcon, ScalesIcon } from './roleIcons'
+import { KeyIcon, PersonIcon, HouseIcon, ScalesIcon } from './roleIcons'
 
 export interface Role {
   id: string
@@ -10,6 +10,6 @@ export interface Role {
 export const ROLES: Role[] = [
   { id: 'tenant', label: 'Tenant', Icon: PersonIcon },
   { id: 'landlord', label: 'Landlord', Icon: HouseIcon },
-  { id: 'agent', label: 'Agent or Caretaker', Icon: HeartOutlineIcon },
+  { id: 'caretaker', label: 'Caretaker', Icon: KeyIcon },
   { id: 'lawyer', label: 'Lawyer', Icon: ScalesIcon },
 ]

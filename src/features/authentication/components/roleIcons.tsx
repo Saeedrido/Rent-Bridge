@@ -40,6 +40,16 @@ export function HeartOutlineIcon({ className }: IconProps) {
   )
 }
 
+export function KeyIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="m12 12 9-9" />
+      <path d="m16.5 7.5 3 3L22 7.5l-2.5-2.5" />
+    </svg>
+  )
+}
+
 export function ScalesIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className}>
