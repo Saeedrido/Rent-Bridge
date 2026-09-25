@@ -1,7 +1,15 @@
-import { useState, useRef, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Seo } from '../../../components/common'
-import { dashboardProperties } from '../../../features/dashboard/data/dashboardProperties'
+import { Spinner } from '../../../components/ui'
+import type { DashboardProperty } from '../../../features/dashboard/data/dashboardProperties'
+import { propertyService } from '../../../features/properties/services/propertyService'
+import { propertyToDashboardProperty, isUuid, formatDate } from '../../../services/api/mappers'
+import { getListing } from '../../../services/api/listingApi'
+import { createLease, requestInspection } from '../../../services/api/leaseApi'
+import { apiErrorMessage } from '../../../services/api/fallback'
+import { useFavorites } from '../../favorites/hooks/useFavorites'
+import { DataErrorBanner, useToast } from '../roleDashboards/shared'
 import { cn } from '../../../utils/cn'
 import { ChevronLeftIcon, ChevronRightIcon, PlayCircleIcon, CheckIcon, SaveIcon } from '../components/icons'
 
@@ -13,76 +21,35 @@ interface MediaItem {
   preview?: string
 }
 
-const MEDIA_ITEMS: Record<string, MediaItem[]> = {
-  '1': [
-    { id: '1a', url: '/home1.jpg', alt: 'Living room', type: 'image' },
-    { id: '1b', url: '/home2.jpg', alt: 'Bedroom', type: 'image' },
-    { id: '1c', url: '/home3.jpg', alt: 'Exterior', type: 'image' },
-    { id: '1d', url: '/home4.jpg', alt: 'Kitchen', type: 'image' },
-    { id: '1e', url: '/home5.jpg', alt: 'Bathroom', type: 'image' },
-  ],
-  '2': [
-    { id: '2a', url: '/home2.jpg', alt: 'Living room', type: 'image' },
-    { id: '2b', url: '/home1.jpg', alt: 'Kitchen', type: 'image' },
-    { id: '2c', url: '/home3.jpg', alt: 'Exterior', type: 'image' },
-  ],
-  '3': [
-    { id: '3a', url: '/home3.jpg', alt: 'Living room', type: 'image' },
-    { id: '3b', url: '/home1.jpg', alt: 'Bedroom', type: 'image' },
-    { id: '3c', url: '/home2.jpg', alt: 'Exterior', type: 'image' },
-    { id: '3d', url: '/home4.jpg', alt: 'Kitchen', type: 'image' },
-    { id: '3e', url: '/home5.jpg', alt: 'Bathroom', type: 'image' },
-    { id: '3f', url: '/home6.jpg', alt: 'Compound', type: 'image' },
-  ],
-}
-
-function getMediaForProperty(propertyId: string): MediaItem[] {
-  return MEDIA_ITEMS[propertyId] || [{ id: 'main', url: '/home1.jpg', alt: 'Property', type: 'image' }]
+interface ListingDetails {
+  description: string
+  landlord: { name: string; role: string }
 }
 
 function formatPrice(amount: number): string {
+  if (!Number.isFinite(amount)) return '—'
   return `₦${amount.toLocaleString('en-NG')}`
 }
 
-const PROPERTY_DETAILS: Record<string, { description: string; landlord: { name: string; role: string } }> = {
-  'd1': {
-    description: 'Second-floor flat in a four-unit block off Herbert Macaulay Way. Borehole water, prepaid meter, tiled throughout, gated compound with a resident caretaker.',
-    landlord: { name: 'Emeka Adeyemi', role: 'Verified Landlord · 4 properties' }
-  },
-  'd2': {
-    description: 'Spacious three-bedroom on a quiet street, fitted kitchen, 24-hour security and dedicated parking for two cars.',
-    landlord: { name: 'Ngozi Eze', role: 'Verified Landlord · 2 properties' }
-  },
-  'd3': {
-    description: 'Newly painted mini flat with fitted wardrobes, water heater and inverter backup. Close to National Stadium.',
-    landlord: { name: 'Bimbo Salami', role: 'Verified Agent · Caretaker on site' }
-  },
-  'd4': {
-    description: 'Well-finished 2-bedroom terrace in a gated estate off Millennium Estate Road. 24-hour security, estate generator and children\'s playground.',
-    landlord: { name: 'Samuel Okafor', role: 'Verified Landlord · 3 properties' }
-  },
-  'd5': {
-    description: 'Compact studio ideal for a young professional. Inverter, fitted kitchenette and a short walk to the tech hub on Herbert Macaulay.',
-    landlord: { name: 'Fatima Bello', role: 'Verified Landlord · 3 properties' }
-  },
-  'd6': {
-    description: 'Detached duplex with a boys quarter, fitted kitchen, jacuzzi, smart-home wiring and a compound that parks four cars.',
-    landlord: { name: 'Tunde Bakare', role: 'Verified Landlord · 6 properties' }
-  },
-}
-
-function getPropertyDetails(propertyId: string) {
-  return PROPERTY_DETAILS[propertyId] || { 
-    description: 'A beautiful property in a great location with modern amenities.', 
-    landlord: { name: 'Property Manager', role: 'Verified Landlord' } 
-  }
-}
+const PLATFORM_COMMISSION_RATE = 0.05
+const LAWYER_REVIEW_FEE = 45000
 
 export default function TenantPropertyDetailsPage() {
   const { id } = useParams<{ id: string }>()
-  const property = dashboardProperties.find((p) => p.id === id)
-  const media = getMediaForProperty(id || '')
-  const details = getPropertyDetails(id || '')
+  const navigate = useNavigate()
+  const [property, setProperty] = useState<DashboardProperty | undefined>(undefined)
+  const [loading, setLoading] = useState(true)
+  const [media, setMedia] = useState<MediaItem[]>([])
+  const [details, setDetails] = useState<ListingDetails>({
+    description: 'Contact the listing owner for more details.',
+    landlord: { name: 'Rent Bridge host', role: 'Host' },
+  })
+  const [cautionFee, setCautionFee] = useState(0)
+  const [availableFrom, setAvailableFrom] = useState<string | undefined>(undefined)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [inspecting, setInspecting] = useState(false)
+  const { isFavorite, toggle: toggleFavorite } = useFavorites()
+  const { show } = useToast()
 
   const [activeMediaIndex, setActiveMediaIndex] = useState(0)
   const [galleryStartIndex, setGalleryStartIndex] = useState(0)
@@ -93,6 +60,72 @@ export default function TenantPropertyDetailsPage() {
   const [dragScrollLeft, setDragScrollLeft] = useState(0)
 const galleryRef = useRef<HTMLDivElement>(null)
 const featuredRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setLoadError(null)
+    ;(async () => {
+      if (!id || !isUuid(id)) {
+        setLoading(false)
+        return
+      }
+      try {
+        const full = await propertyService.findById(id)
+        if (!active) return
+        if (!full) {
+          setLoading(false)
+          return
+        }
+        const dashboard = propertyToDashboardProperty(full)
+        setProperty(dashboard)
+        setDetails({
+          description: full.description,
+          landlord: { name: full.landlord.name, role: full.landlord.verified ? 'Verified host' : 'Host' },
+        })
+        setMedia(
+          full.images.map((img, index) => ({
+            id: img.id || `media-${index}`,
+            url: img.url,
+            alt: img.alt || full.title,
+            type: 'image' as const,
+          })),
+        )
+        const detail = await getListing(id).catch(() => null)
+        if (!active) return
+        setCautionFee(detail?.cautionFeeAmount ?? 0)
+        setAvailableFrom(detail?.availableFrom || undefined)
+        setLoading(false)
+      } catch (err) {
+        if (!active) return
+        setLoadError(apiErrorMessage(err) || null)
+        setLoading(false)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  const saved = id ? isFavorite(id) : false
+
+  const handleRequestInspection = async () => {
+    if (!id) return
+    setInspecting(true)
+    try {
+      const lease = await createLease({ listingId: id })
+      await requestInspection(lease.id, {
+        preferredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        note: 'Tenant requested an inspection from the listing page.',
+      })
+      show('Inspection requested — check the Inspections tab')
+      navigate('/dashboard/inspections')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not request inspection right now.')
+    } finally {
+      setInspecting(false)
+    }
+  }
 
   const VISIBLE_THUMBNAILS = 4
   const totalMedia = media.length
@@ -179,14 +212,25 @@ const featuredRef = useRef<HTMLDivElement>(null)
     setVideoUrl(null)
   }
 
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    )
+  }
+
   if (!property) {
     return (
-      <div className="px-[clamp(16px,4vw,40px)] pt-8 pb-16 text-center">
-        <h1 className="font-serif text-2xl font-semibold text-forest">Property not found</h1>
-        <p className="mt-2 text-mist">This listing may have been rented or removed.</p>
-        <Link to="/dashboard" className="mt-4 inline-block text-flame font-semibold hover:underline">
-          Back to properties
-        </Link>
+      <div className="px-[clamp(16px,4vw,40px)] pt-8 pb-16">
+        <DataErrorBanner message={loadError} />
+        <div className="text-center">
+          <h1 className="font-serif text-2xl font-semibold text-forest">Property not found</h1>
+          <p className="mt-2 text-mist">This listing may have been rented or removed.</p>
+          <Link to="/dashboard" className="mt-4 inline-block text-flame font-semibold hover:underline">
+            Back to properties
+          </Link>
+        </div>
       </div>
     )
   }
@@ -199,6 +243,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
       />
       <div className="bg-sand min-h-screen">
         <main className="px-[clamp(16px,4vw,40px)] pt-8 pb-16">
+          <DataErrorBanner message={loadError} />
           <Link
             to="/dashboard"
             className="inline-flex items-center gap-1.5 text-forest font-medium hover:underline mb-6"
@@ -352,17 +397,9 @@ const featuredRef = useRef<HTMLDivElement>(null)
                     <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">TYPE</p>
                     <p className="mt-1 font-serif text-xl font-bold text-ink capitalize">{property.typeLabel}</p>
                   </div>
-                  <div className="rounded-lg border border-sage p-4 text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">WATER</p>
-                    <p className="mt-1 font-serif text-xl font-bold text-ink">Borehole</p>
-                  </div>
-                  <div className="rounded-lg border border-sage p-4 text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">POWER</p>
-                    <p className="mt-1 font-serif text-xl font-bold text-ink">Prepaid meter</p>
-                  </div>
-                  <div className="rounded-lg border border-sage p-4 text-center">
+                  <div className="rounded-lg border border-sage p-4 text-center col-span-3 sm:col-span-1">
                     <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">AVAILABLE</p>
-                    <p className="mt-1 font-serif text-xl font-bold text-ink">1 Sept 2026</p>
+                    <p className="mt-1 font-serif text-xl font-bold text-ink">{availableFrom ? formatDate(availableFrom) : '—'}</p>
                   </div>
                 </div>
               </div>
@@ -383,15 +420,15 @@ const featuredRef = useRef<HTMLDivElement>(null)
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm text-[#374151]">
                     <span>Platform commission (5%)</span>
-                    <span className="font-semibold text-ink">{formatPrice(Math.round(property.price * 0.05))}</span>
+                    <span className="font-semibold text-ink">{formatPrice(Math.round(property.price * PLATFORM_COMMISSION_RATE))}</span>
                   </div>
                   <div className="flex justify-between text-sm text-[#374151]">
                     <span>Lawyer review</span>
-                    <span className="font-semibold text-ink">{formatPrice(45000)}</span>
+                    <span className="font-semibold text-ink">{formatPrice(LAWYER_REVIEW_FEE)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-[#374151]">
                     <span>Caution fee (refundable)</span>
-                    <span className="font-semibold text-ink">{formatPrice(140000)}</span>
+                    <span className="font-semibold text-ink">{cautionFee > 0 ? formatPrice(cautionFee) : '—'}</span>
                   </div>
                 </div>
 
@@ -399,18 +436,30 @@ const featuredRef = useRef<HTMLDivElement>(null)
                   <div className="flex justify-between">
                     <span className="font-semibold text-lg text-ink">Total package</span>
                     <span className="font-serif text-2xl font-bold text-forest">
-                      {formatPrice(property.price + Math.round(property.price * 0.05) + 45000 + 140000)}
+                      {formatPrice(property.price + Math.round(property.price * PLATFORM_COMMISSION_RATE) + LAWYER_REVIEW_FEE + cautionFee)}
                     </span>
                   </div>
                 </div>
 
-                <button className="w-full mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark">
-                  Request Inspection
+                <button
+                  onClick={handleRequestInspection}
+                  disabled={inspecting}
+                  className="w-full mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+                >
+                  {inspecting ? 'Requesting…' : 'Request Inspection'}
                 </button>
 
-                <button className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-6 py-3 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft">
+                <button
+                  onClick={() => toggleFavorite(id ?? '', { availableFrom })}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 rounded-lg border px-6 py-3 text-[15px] font-semibold transition-colors',
+                    saved
+                      ? 'border-forest bg-forest text-white hover:bg-forest-dark'
+                      : 'border-sage bg-white text-forest hover:border-forest hover:bg-sage-soft'
+                  )}
+                >
                   <SaveIcon className="w-5 h-5" />
-                  Save property
+                  {saved ? 'Saved' : 'Save property'}
                 </button>
 
                 <p className="text-center text-sm text-mist">

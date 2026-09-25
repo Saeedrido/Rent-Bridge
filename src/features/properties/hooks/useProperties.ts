@@ -6,14 +6,17 @@ import type { SearchFilters } from '../../search/types/search'
 export function useProperties(filters?: SearchFilters) {
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const key = filters ? JSON.stringify(filters) : 'all'
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    propertyService.getProperties(filters).then((data) => {
+    setError(null)
+    propertyService.getPropertiesWithError(filters).then((result) => {
       if (active) {
-        setProperties(data)
+        setProperties(result.data)
+        setError(result.error)
         setLoading(false)
       }
     })
@@ -22,5 +25,5 @@ export function useProperties(filters?: SearchFilters) {
     }
   }, [key])
 
-  return { properties, loading }
+  return { properties, loading, error }
 }

@@ -1,10 +1,31 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { defaultFilters, type SearchFilters, type SortOption } from '../types/search'
 import type { ListingType, PropertyType } from '../../properties/types/property'
+import type { Property } from '../../properties/types/property'
 import { propertyService } from '../../properties/services/propertyService'
 
 export function useSearchFilters(initial?: Partial<SearchFilters>) {
   const [filters, setFilters] = useState<SearchFilters>({ ...defaultFilters, ...initial })
+  const [properties, setProperties] = useState<Property[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const key = JSON.stringify(filters)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(null)
+    propertyService.getPropertiesWithError(filters).then((result) => {
+      if (active) {
+        setProperties(result.data)
+        setError(result.error)
+        setLoading(false)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [key])
 
   const updateFilter = useCallback(<K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }))
@@ -21,16 +42,7 @@ export function useSearchFilters(initial?: Partial<SearchFilters>) {
 
   const reset = useCallback(() => setFilters({ ...defaultFilters, ...initial }), [initial])
 
-  const results = useMemo(() => {
-    // Synchronous derivation for instant UI; service call is reserved for the API upgrade.
-    return filters
-  }, [filters])
-
-  const properties = useMemo(() => {
-    return propertyService.getPropertiesSync(filters)
-  }, [filters])
-
-  return { filters, updateFilter, toggleAmenity, reset, properties, results }
+  return { filters, updateFilter, toggleAmenity, reset, properties, loading, error, results: properties }
 }
 
 export type { SearchFilters, SortOption, ListingType, PropertyType }

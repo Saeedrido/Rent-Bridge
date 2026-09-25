@@ -1,13 +1,39 @@
-import { useState } from 'react'
-import { PageHeading, EmptyState } from '../roleDashboards/shared'
-import { tenantInspections } from './tenantData'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { PageHeading, EmptyState, DataErrorBanner } from '../roleDashboards/shared'
 import { InspectionCard } from './InspectionCard'
+import { loadWithFallback } from '../../../services/api/fallback'
+import { listCallerLeases } from '../../../services/api/leaseApi'
+import { leaseToInspection } from '../../../services/api/mappers'
 
 export function TenantInspectionsPage() {
-  const [inspections] = useState(tenantInspections)
+  const [inspections, setInspections] = useState([] as ReturnType<typeof leaseToInspection>[])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    let active = true
+    loadWithFallback(
+      async () => {
+        const leases = await listCallerLeases(1, 50)
+        return leases.map(leaseToInspection)
+      },
+      [],
+      (value) => value.length === 0,
+    ).then((result) => {
+      if (active) {
+        setInspections(result.data)
+        if (result.error) setLoadError(result.error)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   return (
     <div className="px-[clamp(16px,4vw,40px)]">
+      <DataErrorBanner message={loadError} />
       <PageHeading title="Inspections" subtitle="Your scheduled property inspections" />
       <div className="mt-8">
         {inspections.length === 0 ? (
@@ -23,7 +49,10 @@ export function TenantInspectionsPage() {
             title="No inspections yet"
             body="Properties you request to inspect will appear here."
             action={
-              <button className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
+              >
                 Browse properties
               </button>
             }

@@ -4,23 +4,87 @@ import { Link } from 'react-router-dom'
 import { Seo } from '../../../components/common'
 import { ChevronLeftIcon, CameraIcon } from '../components/icons'
 import { cn } from '../../../utils/cn'
-import { RoleDashboardShell, landlordNotifications, caretakerNotifications } from './RoleDashboardShell'
-import { HomeIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, ProfileIcon, CheckIcon } from '../components/icons'
-import { inputClass, useToast } from './shared'
+import { RoleDashboardShell, type NotificationItem } from './RoleDashboardShell'
+import { HomeIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, CheckIcon } from '../components/icons'
+import { inputClass, useToast, DataErrorBanner } from './shared'
 import { naira } from './data'
+import { createProperty } from '../../../services/api/propertyApi'
+import { createListing, publishListing } from '../../../services/api/listingApi'
+import { ApiError } from '../../../services/api/client'
+import { uploadFile } from '../../../services/api/uploadApi'
+import { getUser } from '../../../services/api/tokens'
+import { refreshProfile } from '../../../services/api/authApi'
+import { listCallerLeases } from '../../../services/api/leaseApi'
+import { leaseToInspectionRequest } from '../../../services/api/mappers'
+import { getPayoutAccount } from '../../../services/api/payoutApi'
+import { apiErrorMessage } from '../../../services/api/fallback'
+import { ExternalLinkIcon } from '../components/icons'
 
 const apartmentTypes = ['1-bedroom', '2-bedroom', '3-bedroom', 'Mini flat', 'Studio', 'Self-contain', 'Duplex', 'Terrace']
 
-const sampleImages = [
-  '/home1.jpg',
-  '/home4.jpg',
-  '/home2.jpg',
-]
-
 export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }) {
-  const profile = role === 'landlord' 
-    ? { name: 'Adaeze Okonkwo', email: 'adaeze.okonkwo@rentbridge.ng', phone: '+234 803 555 0142', verifiedLabel: 'Verified Landlord' }
-    : { name: 'Segun Balogun', email: 'segun.balogun@rentbridge.ng', phone: '+234 802 555 0187', verifiedLabel: 'Verified Caretaker' }
+  const authUser = getUser()
+  const roleLabel = role === 'landlord' ? 'Landlord' : 'Caretaker'
+  const profile = {
+    name:
+      authUser?.name ||
+      [authUser?.firstName, authUser?.lastName].filter(Boolean).join(' ') ||
+      authUser?.email?.split('@')[0] ||
+      roleLabel,
+    email: authUser?.email || '',
+    phone: authUser?.phone || '',
+    verifiedLabel: authUser?.verified === true ? `Verified ${roleLabel}` : roleLabel,
+  }
+  const [verifiedLabel, setVerifiedLabel] = useState(profile.verifiedLabel)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+
+  useEffect(() => {
+    let active = true
+    refreshProfile().then((p) => {
+      if (!active || !p) return
+      if (p.verified === true) setVerifiedLabel(`Verified ${roleLabel}`)
+    })
+    listCallerLeases(1, 50)
+      .then((leases) => {
+        if (!active) return
+        setNotifications(
+          leases
+            .map(leaseToInspectionRequest)
+            .filter((i) => i.status === 'pending')
+            .map((i) => ({
+              id: `notif-${i.id}`,
+              text: `${i.tenant} requested an inspection of your property.`,
+              time: 'New',
+            })),
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [role])
+
+  useEffect(() => {
+    let active = true
+    getPayoutAccount()
+      .then((acc) => {
+        if (!active) return
+        // Backend returns accountNumberLast4 and verifiedAt
+        if (acc?.accountNumberLast4 && acc?.verifiedAt) {
+          setPayoutAccount({
+            bankName: acc.bankName || acc.bankCode || 'Bank',
+            accountNumberMasked: acc.accountNumberMasked || `****${acc.accountNumberLast4}`,
+          })
+        }
+        setPayoutLoading(false)
+      })
+      .catch(() => {
+        if (active) setPayoutLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const navigate = useNavigate()
   const { show } = useToast()
@@ -31,25 +95,43 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
   const [agentFee, setAgentFee] = useState('')
 
   const [formData, setFormData] = useState({
-    listingTitle: '2-bedroom flat, newly serviced',
-    address: '14 Herbert Macaulay Way, Sabo, Yaba',
-    annualRent: '1400000',
-    bedrooms: '2',
-    bathrooms: '2',
-    apartmentType: '2-bedroom',
-    availableFrom: '1 Sept 2026',
-    description: 'Borehole water, prepaid meter, gated compound with a resident caretaker.',
-    cautionFeeAmount: '140000',
-    otherExpenses: 'e.g. service charge ₦60,000 / year',
-    accountNumber: '0123456789 · GTBank',
+    listingTitle: '',
+    address: '',
+    annualRent: '',
+    bedrooms: '',
+    bathrooms: '',
+    apartmentType: '',
+    availableFrom: '',
+    description: '',
+    cautionFeeAmount: '',
+    otherExpenses: '',
   })
 
-  const [photos, setPhotos] = useState<string[]>([...sampleImages])
+  const [photos, setPhotos] = useState<string[]>([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [documents, setDocuments] = useState<string[]>([])
+  const [documentLink, setDocumentLink] = useState('')
+  const [documentError, setDocumentError] = useState<string | null>(null)
   const [cautionFeeActive, setCautionFeeActive] = useState<'yes' | 'no'>('yes')
   const [amenities, setAmenities] = useState<string[]>([])
   const [amenityInput, setAmenityInput] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [payoutAccount, setPayoutAccount] = useState<{ bankName: string; accountNumberMasked: string } | null>(null)
+  const [payoutLoading, setPayoutLoading] = useState(true)
 
   const totalPackage = (Number(realHouseFee) || 0) + (Number(agentFee) || 0)
+
+  const validateForm = (): string | null => {
+    if (!formData.listingTitle || formData.listingTitle.trim().length < 3) {
+      return 'Listing title must be at least 3 characters.'
+    }
+    if (documents.length === 0) {
+      return 'Please attach at least one ownership document before publishing.'
+    }
+    return null
+  }
 
   const addAmenity = () => {
     const value = amenityInput.trim()
@@ -62,25 +144,100 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
     setAmenities((prev) => prev.filter((item) => item !== value))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    show('Listing published successfully')
-    navigate(role === 'landlord' ? '/dashboard/landlord' : '/dashboard/caretaker')
+    if (submitting) return
+
+    const validationError = validateForm()
+    if (validationError) {
+      setSubmitError(validationError)
+      return
+    }
+
+    if (payoutLoading || !payoutAccount) {
+      setSubmitError('Add a verified payout bank account before you can publish a listing')
+      return
+    }
+
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const addressParts = formData.address.split(',').map((part) => part.trim())
+      const [street = formData.address, ...rest] = addressParts
+      const city = rest[rest.length - 2] ?? rest[0] ?? ''
+      const state = rest[rest.length - 1] ?? ''
+      const area = rest.length > 2 ? rest[rest.length - 3] : (rest.length === 2 ? rest[0] : '')
+
+      const property = await createProperty({
+        street,
+        city,
+        area,
+        state,
+        propertyType: formData.apartmentType || undefined,
+        bedrooms: Number(formData.bedrooms) || 0,
+        bathrooms: Number(formData.bathrooms) || 0,
+        availableFrom: formData.availableFrom || undefined,
+        amenities: amenities.length > 0 ? amenities : undefined,
+        documentUrls: documents,
+      })
+      const listing = await createListing({
+        propertyId: property.id,
+        title: formData.listingTitle,
+        priceAmount: Number(formData.annualRent) || 0,
+        description: formData.description,
+        listingType: listingMode,
+        paymentPlan,
+        cautionFeeAmount:
+          listingMode === 'rent' && cautionFeeActive === 'yes'
+            ? Number(formData.cautionFeeAmount) || null
+            : null,
+        otherExpenses: listingMode === 'rent' && formData.otherExpenses ? formData.otherExpenses : undefined,
+        realHouseFeeAmount: role === 'caretaker' ? Number(realHouseFee) || null : null,
+        agentFeeAmount: role === 'caretaker' ? Number(agentFee) || null : null,
+        imageUrls: photos.length > 0 ? photos : undefined,
+      })
+      try {
+        await publishListing(listing.id)
+        show('Listing published successfully')
+        navigate(role === 'landlord' ? '/dashboard/landlord' : '/dashboard/caretaker')
+      } catch (publishErr) {
+        if (publishErr instanceof ApiError && /(identity|payout|verified|verification|ownership|document)/i.test(publishErr.message)) {
+          const origin = publishErr.message.includes('Property must be verified') ? 'ownership' : 'profile'
+          show(
+            origin === 'ownership'
+              ? 'Property and documents submitted. Your listing goes live once the lawyer verifies ownership.'
+              : 'Listing saved as a draft. Complete identity verification and add a payout account to go live.',
+          )
+          navigate(role === 'landlord' ? '/dashboard/landlord' : '/dashboard/caretaker')
+        } else {
+          throw publishErr
+        }
+      }
+    } catch (err) {
+      const msg = apiErrorMessage(err) || (err instanceof ApiError ? err.message : 'Failed to publish listing. Please try again.')
+      if (/identity|verify|kyc/i.test(msg)) setSubmitError(msg)
+      show(msg)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleAddPhoto = () => {
-    if (photos.length >= 6) return
+    if (photos.length >= 6 || uploadingPhoto) return
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = 'image/*'
-    input.onchange = (e) => {
+    input.accept = 'image/jpeg,image/png,image/webp'
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          setPhotos((prev) => [...prev, event.target?.result as string])
-        }
-        reader.readAsDataURL(file)
+      if (!file) return
+      setUploadingPhoto(true)
+      try {
+        const url = await uploadFile(file)
+        setPhotos((prev) => (prev.length >= 6 ? prev : [...prev, url]))
+      } catch (err) {
+        show(apiErrorMessage(err) || 'Could not upload photo. Please try again.')
+      } finally {
+        setUploadingPhoto(false)
       }
     }
     input.click()
@@ -90,19 +247,58 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
     setPhotos((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const addDocument = () => {
+    const value = documentLink.trim()
+    if (!value) return
+    if (!/^https?:\/\/\S+$/i.test(value)) {
+      setDocumentError('Use a full link that starts with https:// pointing to a hosted copy of the document.')
+      return
+    }
+    if (documents.includes(value)) {
+      setDocumentError('That document is already attached.')
+      return
+    }
+    setDocuments((prev) => [...prev, value])
+    setDocumentLink('')
+    setDocumentError(null)
+  }
+
+  const uploadDocumentFile = () => {
+    if (uploadingDoc) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/pdf,image/jpeg,image/png,image/webp'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      setUploadingDoc(true)
+      try {
+        const url = await uploadFile(file)
+        setDocuments((prev) => (prev.includes(url) ? prev : [...prev, url]))
+      } catch (err) {
+        show(apiErrorMessage(err) || 'Could not upload document. Please try again.')
+      } finally {
+        setUploadingDoc(false)
+      }
+    }
+    input.click()
+  }
+
+  const removeDocument = (index: number) => {
+    setDocuments((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const tabs = [
     { id: 'properties', label: 'My properties', Icon: HomeIcon },
     { id: 'inspections', label: 'Inspections', Icon: InspectionsIcon },
     { id: 'agreement', label: 'Agreement', Icon: AgreementIcon },
     { id: 'payments', label: 'Payments', Icon: PaymentsIcon },
-    { id: 'profile', label: 'Profile', Icon: ProfileIcon },
   ]
 
-  const shellUser = { name: profile.name, verifiedLabel: profile.verifiedLabel, notificationCount: 3 }
-  const notifications = role === 'landlord' ? landlordNotifications : caretakerNotifications
+  const shellUser = { name: profile.name, verifiedLabel, notificationCount: notifications.length }
 
   return (
-    <>
+    <div>
       <Seo title="Publish Property · Rent Bridge" description="Publish a new apartment listing" />
       <RoleDashboardShell
         user={shellUser}
@@ -110,8 +306,10 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
         tabs={tabs}
         active="properties"
         onChange={(id) => navigate(role === 'landlord' ? `/dashboard/${id}` : `/dashboard/caretaker`)}
+        settingsTo={role === 'landlord' ? '/dashboard/landlord/settings' : '/dashboard/caretaker/settings'}
       >
         <div className="mt-8 max-w-[1025px]">
+          <DataErrorBanner message={submitError} />
           <Link
             to={role === 'landlord' ? '/dashboard/landlord' : '/dashboard/caretaker'}
             className="inline-flex items-center gap-1.5 text-forest font-medium hover:underline mb-6"
@@ -159,9 +357,12 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
                 type="text"
                 value={formData.listingTitle}
                 onChange={(e) => setFormData({ ...formData, listingTitle: e.target.value })}
-                className={inputClass}
+                className={cn(inputClass, formData.listingTitle && formData.listingTitle.length > 0 && formData.listingTitle.length < 3 && 'border-flame focus:border-flame focus:ring-flame/15')}
                 placeholder="e.g. 2-bedroom flat, newly serviced"
               />
+              {formData.listingTitle && formData.listingTitle.length > 0 && formData.listingTitle.length < 3 && (
+                <span className="mt-1 block text-[13px] font-medium text-[#B42318]">Listing title must be at least 3 characters.</span>
+              )}
             </div>
 
             <div>
@@ -171,8 +372,9 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 className={inputClass}
-                placeholder="e.g. 14 Herbert Macaulay Way, Sabo, Yaba"
+                placeholder="Street, Area, City, State (e.g. 14 Herbert Macaulay Way, Sabo, Yaba, Lagos)"
               />
+              <p className="mt-1 text-xs text-mist">Format: Street, Area, City, State — all 4 parts required for accurate location</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -428,14 +630,105 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-forest mb-3">Account number for payouts</label>
-              <input
-                type="text"
-                value={formData.accountNumber}
-                onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
-                className={inputClass}
-                placeholder="0123456789 · GTBank"
-              />
+              <label className="block text-sm font-semibold text-forest mb-3">Payout account</label>
+              {payoutLoading ? (
+                <div className="rounded-lg border border-sage bg-sage-soft/50 p-4 animate-pulse">
+                  <div className="h-5 w-3/4 bg-white rounded" />
+                </div>
+              ) : payoutAccount ? (
+                <div className="rounded-lg border border-sage bg-sage-soft/50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.07em] text-forest">Linked account</p>
+                  <p className="mt-2 font-semibold text-ink">{payoutAccount.bankName}</p>
+                  <p className="text-sm text-mist">{payoutAccount.accountNumberMasked}</p>
+                  <p className="mt-2 text-xs text-forest">✓ Payout account configured</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border-2 border-dashed border-flame bg-white p-4">
+                  <p className="text-sm text-flame mb-3">No payout account configured</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(role === 'landlord' ? '/dashboard/landlord/settings' : '/dashboard/caretaker/settings', { state: { scrollTo: 'payout' } })}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
+                  >
+                    <ExternalLinkIcon className="w-5 h-5" />
+                    Add payout account in Settings
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-forest mb-3 flex items-center gap-2">
+                Ownership documents
+                <ShieldCheckIcon className="w-5 h-5 text-forest" />
+              </label>
+              <p className="text-sm text-mist mb-4">
+                Attach the proof(s) of ownership for this property — Certificate of Occupancy, Deed of Assignment,
+                Survey plan, tax receipt or utility bill. A lawyer reviews these documents before your listing can go
+                live.
+              </p>
+              <div className="flex flex-wrap items-start gap-3">
+                <button
+                  type="button"
+                  onClick={uploadDocumentFile}
+                  disabled={uploadingDoc}
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg bg-forest px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-green-dark disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <UploadIcon className="w-5 h-5 mr-2" />
+                  {uploadingDoc ? 'Uploading…' : 'Upload document'}
+                </button>
+                <span className="inline-flex items-center px-2 py-2.5 text-sm text-mist">or paste a link</span>
+                <div className="flex-1 min-w-[240px] flex items-start gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="url"
+                      value={documentLink}
+                      onChange={(e) => {
+                        setDocumentLink(e.target.value)
+                        setDocumentError(null)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          addDocument()
+                        }
+                      }}
+                      className={inputClass}
+                      placeholder="https:// ... hosted copy of the document"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addDocument}
+                    className="inline-flex shrink-0 items-center justify-center rounded-lg border border-forest bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:bg-sage-soft"
+                  >
+                    Attach
+                  </button>
+                </div>
+              </div>
+              {documentError && <p className="mt-2 text-sm text-flame">{documentError}</p>}
+              <p className="mt-2 text-xs text-mist">
+                At least one document is required. Upload a PDF, JPG or PNG and it is hosted for the lawyer to review.
+              </p>
+              {documents.length > 0 && (
+                <div className="mt-4 flex flex-col gap-2">
+                  {documents.map((doc, index) => (
+                    <div key={doc} className="flex items-center gap-3 rounded-lg border border-sage bg-white px-4 py-3">
+                      <ShieldCheckIcon className="w-5 h-5 text-forest shrink-0" />
+                      <span className="truncate flex-1 text-sm font-medium text-ink">{doc}</span>
+                      <span className="shrink-0 text-xs text-mist">Document {index + 1}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDocument(index)}
+                        aria-label={`Remove document ${index + 1}`}
+                        className="shrink-0 text-mist transition-colors hover:text-flame"
+                      >
+                        <CloseIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -466,28 +759,33 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
                 <button
                   type="button"
                   onClick={handleAddPhoto}
-                  disabled={photos.length >= 6}
+                  disabled={photos.length >= 6 || uploadingPhoto}
                   className={cn(
                     'flex-shrink-0 w-[220px] aspect-[4/3] rounded-xl border-2 border-dashed border-sage flex flex-col items-center justify-center gap-3 transition-colors',
-                    photos.length >= 6 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-sage-soft hover:border-forest'
+                    photos.length >= 6 || uploadingPhoto
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'hover:bg-sage-soft hover:border-forest'
                   )}
                 >
                   <CameraIcon className="w-8 h-8 text-forest" />
-                  <span className="text-forest font-medium">+ Add photo</span>
+                  <span className="text-forest font-medium">
+                    {uploadingPhoto ? 'Uploading…' : '+ Add photo'}
+                  </span>
                 </button>
               </div>
             </div>
 
             <button
               type="submit"
-              className="w-full mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark"
+              disabled={submitting}
+              className="w-full mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Publish listing
+              {submitting ? 'Publishing…' : 'Publish listing'}
             </button>
           </form>
         </div>
-      </RoleDashboardShell>
-    </>
+</RoleDashboardShell>
+    </div>
   )
 }
 
@@ -615,6 +913,25 @@ function CloseIcon({ className }: { className?: string }) {
   return (
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+}
+
+function ShieldCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  )
+}
+
+function UploadIcon({ className }: { className?: string }) {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m17 8-5-5-5 5" />
+      <path d="M12 3v12" />
     </svg>
   )
 }

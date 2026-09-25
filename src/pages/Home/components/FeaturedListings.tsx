@@ -1,11 +1,12 @@
 import { Container } from '../../../components/layout'
 import { PropertyCard } from '../../../components/common'
 import { Button, Spinner } from '../../../components/ui'
+import { DataErrorBanner } from '../../../features/dashboard/roleDashboards/shared'
 import { useProperties } from '../../../features/properties/hooks/useProperties'
 
 export function FeaturedListings() {
-  const { properties, loading } = useProperties()
-  const featured = properties.filter((p) => p.featured).slice(0, 3)
+  const { properties, loading, error } = useProperties()
+  const featured = properties.slice(0, 3)
 
   return (
     <section className="mx-auto" style={{ maxWidth: 1180, padding: '0 28px 84px' }}>
@@ -13,6 +14,7 @@ export function FeaturedListings() {
         <h2 className="font-serif font-bold text-green-dark" style={{ fontSize: 'clamp(26px, 3vw, 34px)', letterSpacing: '-.02em', margin: '0 0 28px' }}>
           Verified Listings Near You
         </h2>
+        <DataErrorBanner message={error} />
         {loading ? (
           <div className="flex justify-center py-12">
             <Spinner className="h-7 w-7" />

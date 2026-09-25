@@ -4,6 +4,12 @@ import { PageHeading, EmptyState, useToast } from '../roleDashboards/shared'
 import type { SavedProperty } from './tenantData'
 import type { DashboardProperty } from '../../dashboard/data/dashboardProperties'
 
+function shortDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value || ''
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 interface SavedPageProps {
   savedProperties: SavedProperty[]
   onRemoveFromSaved?: (propertyId: string) => void
@@ -128,7 +134,9 @@ return (
                     <span className="text-sm text-mist">/ year</span>
                   </div>
                   <div className="mt-2 text-sm text-mist">
-                    Available from 1 Sept 2026
+                    {property.availableFrom
+                      ? `Available from ${shortDate(property.availableFrom)}`
+                      : `Saved ${shortDate(property.savedAt) || 'just now'}`}
                   </div>
                   <button
                     type="button"

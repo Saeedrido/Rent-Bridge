@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Container } from '../../components/layout'
 import { Seo, PropertyCard, Breadcrumbs } from '../../components/common'
 import { Spinner, EmptyState } from '../../components/ui'
+import { DataErrorBanner } from '../../features/dashboard/roleDashboards/shared'
 import { useProperty } from '../../features/properties/hooks/useProperty'
-import { properties } from '../../features/properties/data/properties'
+import { propertyService } from '../../features/properties/services/propertyService'
+import type { Property } from '../../features/properties/types/property'
 import { PropertyGallery } from '../../features/properties/components/PropertyGallery'
 import { PropertyHeader } from '../../features/properties/components/PropertyHeader'
 import { PropertyInfo } from '../../features/properties/components/PropertyInfo'
@@ -13,7 +16,22 @@ import { PropertyActions } from '../../features/properties/components/PropertyAc
 
 export default function PropertyDetailsPage() {
   const { slug } = useParams<{ slug: string }>()
-  const { property, loading } = useProperty(slug)
+  const { property, loading, error } = useProperty(slug)
+  const [related, setRelated] = useState<Property[]>([])
+
+  useEffect(() => {
+    if (!property) {
+      setRelated([])
+      return
+    }
+    let active = true
+    propertyService.getRelated(property).then((data) => {
+      if (active) setRelated(data)
+    })
+    return () => {
+      active = false
+    }
+  }, [property?.id])
 
   if (loading) {
     return (
@@ -26,6 +44,7 @@ export default function PropertyDetailsPage() {
   if (!property) {
     return (
       <Container className="py-16">
+        <DataErrorBanner message={error} />
         <EmptyState
           title="Property not found"
           description="This listing may have been rented or removed."
@@ -54,8 +73,6 @@ export default function PropertyDetailsPage() {
       ? { leaseLength: 'P1Y', priceCurrency: 'NGN', price: property.price }
       : { priceCurrency: 'NGN', price: property.price }),
   }
-
-  const related = properties.filter((p) => p.id !== property.id && p.city === property.city).slice(0, 3)
 
   return (
     <>

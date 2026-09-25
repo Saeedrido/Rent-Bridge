@@ -10,9 +10,12 @@ import { TenantDashboard } from '../features/dashboard/DashboardPages'
 import { AgentDashboard } from '../features/dashboard/DashboardPages'
 import { LandlordCaretakerDashboard } from '../features/dashboard/roleDashboards/LandlordCaretakerDashboard'
 import { LawyerDashboard } from '../features/dashboard/roleDashboards/LawyerDashboard'
+import { AdminDashboard } from '../features/dashboard/roleDashboards/AdminDashboard'
 import { PublishPropertyPage } from '../features/dashboard/roleDashboards/PublishPropertyPage'
+import { SettingsPage } from '../features/dashboard/settings/SettingsPage'
 import NotFoundPage from '../features/common/NotFoundPage'
 import { Spinner } from '../components/ui'
+import { RequireAuth } from './RequireAuth'
 
 const SuspenseWrapper = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<Spinner className="h-8 w-8" />}>{children}</Suspense>
@@ -41,22 +44,26 @@ export const router = createBrowserRouter([
       { path: '*', element: <NotFoundPage /> },
     ],
   },
-  { path: '/dashboard', element: <DashboardLayout />, children: [
+  { path: '/dashboard', element: <RequireAuth><DashboardLayout /></RequireAuth>, children: [
     { index: true, element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
     { path: 'agent', element: <SuspenseWrapper><AgentDashboard /></SuspenseWrapper> },
     { path: 'inspections', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
     { path: 'payments', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
     { path: 'saved', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
     { path: 'agreement', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
-    { path: 'profile', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
+    { path: 'settings', element: <SuspenseWrapper><TenantDashboard /></SuspenseWrapper> },
+    { path: 'agent/settings', element: <SuspenseWrapper><AgentDashboard /></SuspenseWrapper> },
     { path: 'properties/:id', element: <SuspenseWrapper><TenantPropertyDetailsPage /></SuspenseWrapper> },
     { path: 'agreement/:id', element: <SuspenseWrapper><TenantAgreementPageLazy /></SuspenseWrapper> },
   ]},
-  { path: '/dashboard/landlord', element: <LandlordCaretakerDashboard role="landlord" /> },
-  { path: '/dashboard/caretaker', element: <LandlordCaretakerDashboard role="caretaker" /> },
-  { path: '/dashboard/lawyer', element: <LawyerDashboard /> },
-  { path: '/dashboard/landlord/publish', element: <PublishPropertyPage role="landlord" /> },
-  { path: '/dashboard/caretaker/publish', element: <PublishPropertyPage role="caretaker" /> },
+  { path: '/dashboard/landlord', element: <RequireAuth><LandlordCaretakerDashboard role="landlord" /></RequireAuth> },
+  { path: '/dashboard/caretaker', element: <RequireAuth><LandlordCaretakerDashboard role="caretaker" /></RequireAuth> },
+  { path: '/dashboard/lawyer', element: <RequireAuth><LawyerDashboard /></RequireAuth> },
+  { path: '/dashboard/admin', element: <RequireAuth><AdminDashboard /></RequireAuth> },
+  { path: '/dashboard/landlord/publish', element: <RequireAuth><PublishPropertyPage role="landlord" /></RequireAuth> },
+  { path: '/dashboard/caretaker/publish', element: <RequireAuth><PublishPropertyPage role="caretaker" /></RequireAuth> },
+  { path: '/dashboard/landlord/settings', element: <RequireAuth><SettingsPage role="landlord" /></RequireAuth> },
+  { path: '/dashboard/caretaker/settings', element: <RequireAuth><SettingsPage role="caretaker" /></RequireAuth> },
   { path: '/login', element: <AuthPage initialMode="login" /> },
   { path: '/register', element: <AuthPage initialMode="signup" /> },
   { path: '/role-selection', element: <RoleSelectionPage /> },

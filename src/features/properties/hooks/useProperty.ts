@@ -5,13 +5,16 @@ import type { Property } from '../types/property'
 export function useProperty(slug: string | undefined) {
   const [property, setProperty] = useState<Property | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    propertyService.getPropertyBySlug(slug ?? '').then((data) => {
+    setError(null)
+    propertyService.getPropertyBySlugWithError(slug ?? '').then((result) => {
       if (active) {
-        setProperty(data)
+        setProperty(result.data)
+        setError(result.error)
         setLoading(false)
       }
     })
@@ -20,5 +23,5 @@ export function useProperty(slug: string | undefined) {
     }
   }, [slug])
 
-  return { property, loading }
+  return { property, loading, error }
 }

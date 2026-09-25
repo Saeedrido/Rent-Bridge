@@ -1,19 +1,121 @@
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ChevronRightIcon, AlertTriangleIcon, InfoIcon, ShieldCheckIcon, PenIcon, AlertCircleIcon } from '../components/icons'
-import { PageHeading, StatusPill, cn, formatPrice } from '../roleDashboards/shared'
-import { tenantAgreements } from './tenantData'
+import { PageHeading, StatusPill, cn, formatPrice, DataErrorBanner, useToast } from '../roleDashboards/shared'
+import { Spinner } from '../../../components/ui'
+import type { TenantAgreement, AgreementClause } from './tenantData'
+import { getLease, getLeaseAgreement, getLeaseAgreementPdf, signLease, fundEscrow } from '../../../services/api/leaseApi'
+import { agreementTermsToClauses, isUuid, leaseToTenantAgreement, formatDate } from '../../../services/api/mappers'
+import { apiErrorMessage } from '../../../services/api/fallback'
+import { getListing } from '../../../services/api/listingApi'
+
+const PLATFORM_COMMISSION_RATE = 0.05
+const LAWYER_REVIEW_FEE = 45000
 
 export function TenantAgreementPage() {
   const { id } = useParams<{ id: string }>()
-  
-  const agreement = tenantAgreements.find(a => a.id === id)
-  
+  const [agreement, setAgreement] = useState<TenantAgreement | null | undefined>(undefined)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const { show } = useToast()
+
+  useEffect(() => {
+    let active = true
+    if (!id) {
+      setAgreement(null)
+      return
+    }
+    ;(async () => {
+      if (!isUuid(id)) {
+        if (active) setAgreement(null)
+        return
+      }
+      try {
+        const lease = await getLease(id)
+        let clauses: AgreementClause[] = []
+        try {
+          clauses = agreementTermsToClauses(await getLeaseAgreement(id))
+        } catch {
+          clauses = []
+        }
+        const mapped = leaseToTenantAgreement(lease, clauses)
+        const listingId = typeof lease.listingId === 'string' ? lease.listingId : undefined
+        if (listingId) {
+          const detail = await getListing(listingId).catch(() => null)
+          if (detail) {
+            const rent = detail.priceAmount ?? mapped.totalAmount
+            const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
+            const caution = detail.cautionFeeAmount ?? 0
+            mapped.totalAmount = rent + commission + LAWYER_REVIEW_FEE + caution
+            mapped.propertyTitle = detail.title || mapped.propertyTitle
+            mapped.propertyLocation = [detail.area, detail.city].filter(Boolean).join(', ') || mapped.propertyLocation
+            if (detail.availableFrom) mapped.term = `Available from ${formatDate(detail.availableFrom)}`
+          }
+        }
+        if (active) setAgreement(mapped)
+      } catch (err) {
+        if (!active) return
+        setLoadError(apiErrorMessage(err) || null)
+        setAgreement(null)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  if (agreement === undefined) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center px-[clamp(16px,4vw,40px)]">
+        <Spinner className="h-8 w-8" />
+      </div>
+    )
+  }
+
   if (!agreement) {
     return (
       <div className="px-[clamp(16px,4vw,40px)] pt-8 pb-16">
+        <DataErrorBanner message={loadError} />
         <PageHeading title="Agreement Not Found" subtitle="This agreement could not be found." />
       </div>
     )
+  }
+
+  const handleAcceptAndPay = async () => {
+    if (!id || submitting) return
+    setSubmitting(true)
+    try {
+      await signLease(id)
+      const res = await fundEscrow(id)
+      const url = res.checkoutUrl ?? res.url
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        show('Agreement signed. Opening secure checkout for your escrow payment.')
+      } else {
+        show('Agreement signed. Checkout is being prepared — see the Payments tab.')
+      }
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not accept and pay right now.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDownload = async () => {
+    if (!id) return
+    try {
+      const blob = await getLeaseAgreementPdf(id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `agreement-${id.slice(0, 8)}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      show('Could not download the agreement PDF right now.')
+    }
   }
 
   const progressSteps = [
@@ -44,6 +146,7 @@ export function TenantAgreementPage() {
 
   return (
     <div className="px-[clamp(16px,4vw,40px)]">
+      <DataErrorBanner message={loadError} />
       <div className="flex flex-col lg:flex-row lg:items-start lg:gap-8 lg:gap-x-10">
         {/* Left Column - Agreement Document */}
         <div className="lg:w-[52%] flex-1 min-w-0">
@@ -182,7 +285,11 @@ export function TenantAgreementPage() {
             </div>
 
             <div className="p-6 space-y-8 overflow-y-auto" style={{ maxHeight: '75vh' }}>
-              {agreement.clauses.map((clause, index) => (
+              {agreement.clauses.length === 0 ? (
+                <div className="py-10 text-center text-sm text-mist">
+                  The agreement document has not been uploaded yet. It will appear once the landlord submits the draft for lawyer review.
+                </div>
+              ) : agreement.clauses.map((clause, index) => (
                 <div
                   key={clause.number}
                   id={`clause-${clause.number}`}
@@ -232,7 +339,12 @@ export function TenantAgreementPage() {
         <div className="lg:w-[48%] lg:sticky lg:top-24 lg:self-start space-y-6">
           <div className="rounded-xl border border-sage bg-white p-6">
             <h3 className="font-semibold text-lg text-forest mb-4">Lawyer Feedback</h3>
-            <div className="space-y-4">
+            {agreement.feedback.length === 0 ? (
+              <p className="text-sm text-mist leading-relaxed">
+                No lawyer feedback yet. Comments will appear here once the lawyer reviews the agreement.
+              </p>
+            ) : (
+              <div className="space-y-4">
               {agreement.feedback.map((item) => (
                 <div
                   key={item.id}
@@ -283,7 +395,8 @@ export function TenantAgreementPage() {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Primary CTA */}
@@ -296,10 +409,17 @@ export function TenantAgreementPage() {
               </div>
             </div>
             <button
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark"
-              disabled={agreement.status === 'signed'}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+              onClick={handleAcceptAndPay}
+              disabled={agreement.status !== 'awaiting-tenant' || submitting}
             >
-              {agreement.status === 'signed' ? 'Agreement Signed' : 'Accept lawyer\'s edits & pay'}
+              {agreement.status === 'signed'
+                ? 'Agreement Signed'
+                : agreement.status === 'draft' || agreement.status === 'lawyer-review'
+                  ? 'Awaiting lawyer review'
+                  : submitting
+                    ? 'Accepting…'
+                    : 'Accept & pay into escrow'}
             </button>
             <p className="text-center text-sm text-mist">
               Nothing is payable until a lawyer has reviewed your agreement.
@@ -312,7 +432,10 @@ export function TenantAgreementPage() {
               <ShieldCheckIcon className="w-12 h-12 mx-auto text-forest mb-3" />
               <h3 className="font-serif text-xl font-semibold text-forest mb-1">Agreement Signed</h3>
               <p className="text-sm text-mist">This agreement has been signed by all parties.</p>
-              <button className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft">
+              <button
+                onClick={handleDownload}
+                className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+              >
                 <ChevronRightIcon className="w-4 h-4" />
                 View signed agreement
               </button>
@@ -334,8 +457,12 @@ export function TenantAgreementPage() {
               <AlertCircleIcon className="w-12 h-12 mx-auto text-flame mb-3" />
               <h3 className="font-serif text-xl font-semibold text-forest mb-1">Action Required</h3>
               <p className="text-sm text-mist mb-4">The lawyer has completed their review. Please review the feedback and accept to proceed.</p>
-              <button className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark">
-                Accept lawyer's edits & pay
+              <button
+                onClick={handleAcceptAndPay}
+                disabled={submitting}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+              >
+                {submitting ? 'Accepting…' : 'Accept & pay into escrow'}
               </button>
             </div>
           )}

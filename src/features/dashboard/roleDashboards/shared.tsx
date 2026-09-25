@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
+import { getKycStatus, type KycStatusValue } from '../../../services/api/kycApi'
 import { cn } from '../../../utils/cn'
 
 export { cn }
@@ -128,6 +130,45 @@ export function FileSearchIcon({ className }: IconProps) {
       <circle cx="11.5" cy="13.5" r="2.5" />
       <path d="m13.5 15.5 2 2" />
     </svg>
+  )
+}
+
+/* --------------------------- data error banner ---------------------------- */
+
+export function DataErrorBanner({ message }: { message: string | null }) {
+  const navigate = useNavigate()
+  if (!message) return null
+  const isIdentity = message.length < 400 && /(\bidentity\b|\bverif\w*|\bkyc\b|\bnin\b)/i.test(message)
+  const title = isIdentity ? 'Live data is blocked' : 'Live data unavailable'
+  const body = isIdentity
+    ? `${message}. Complete identity verification (KYC) to unlock live data.`
+    : 'The server could not load live data right now. Please try again later.'
+  return (
+    <div className="mb-6 rounded-xl border border-[#E4C7C7] bg-[#FDF3F3] p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-semibold text-[#B42318]">{title}</p>
+          <p className="mt-1 text-sm text-[#7A271A]">{body}</p>
+        </div>
+        {isIdentity ? (
+          <button
+            type="button"
+            onClick={() => navigate('/kyc-verification')}
+            className="shrink-0 rounded-lg bg-[#B42318] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#912018]"
+          >
+            Complete KYC
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 rounded-lg border border-[#B42318]/30 bg-white px-4 py-2 text-sm font-semibold text-[#B42318] transition-colors hover:bg-[#FDF3F3]"
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -390,10 +431,12 @@ export function ProfileSection({
   initial,
   verifiedLabel,
   onSave,
+  verification = true,
 }: {
   initial: ProfileData
   verifiedLabel: string
   onSave: (data: ProfileData) => void
+  verification?: boolean
 }) {
   const { show } = useToast()
   const [edit, setEdit] = useState(false)
@@ -470,18 +513,83 @@ export function ProfileSection({
         </div>
       </div>
 
-      <div className="rounded-xl border border-sage bg-white p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sage-soft">
-            <ShieldCheckIcon className="text-forest" />
-          </div>
-          <div className="pt-1">
-            <h3 className="font-semibold text-ink">Identity verified</h3>
-            <p className="mt-1 text-sm text-mist">{verifiedLabel} · KYC completed on 4 Feb 2026</p>
+      {verification && <VerificationCard verifiedLabel={verifiedLabel} />}
+    </div>
+  )
+}
+
+/* ----------------------------- verification card --------------------------- */
+
+export function VerificationCard({ verifiedLabel }: { verifiedLabel?: string }) {
+  const navigate = useNavigate()
+  const [state, setState] = useState<'loading' | KycStatusValue>('loading')
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const status = await getKycStatus()
+        if (active) setState(status?.status ?? 'none')
+      } catch {
+        if (active) setState('none')
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const title =
+    state === 'verified'
+      ? 'Identity verified'
+      : state === 'pending'
+        ? 'Verification in progress'
+        : 'Identity verification'
+
+  const subtext =
+    state === 'verified'
+      ? `${verifiedLabel ? `${verifiedLabel} · ` : ''}KYC completed`
+      : state === 'pending'
+        ? 'Our check is still running. This can take a few minutes.'
+        : state === 'rejected'
+          ? 'Your previous verification was not confirmed. You can try again.'
+          : 'Verify your NIN and identity to unlock the full platform.'
+
+  const actionLabel =
+    state === 'none'
+      ? 'Make verification'
+      : state === 'pending'
+        ? 'Continue verification'
+        : state === 'rejected'
+          ? 'Retry verification'
+          : null
+
+  return (
+    <div className="rounded-xl border border-sage bg-white p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sage-soft">
+          <ShieldCheckIcon className="text-forest" />
+        </div>
+        <div className="flex-1 pt-1">
+          <h3 className="font-semibold text-ink">{title}</h3>
+          <p className="mt-1 text-sm text-mist">{subtext}</p>
+          {state === 'loading' ? (
+            <StatusPill tone="pending" className="mt-3">
+              Checking…
+            </StatusPill>
+          ) : actionLabel ? (
+            <button
+              type="button"
+              onClick={() => navigate('/kyc-verification')}
+              className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark"
+            >
+              {actionLabel}
+            </button>
+          ) : (
             <StatusPill tone="signed" className="mt-3">
               Verified
             </StatusPill>
-          </div>
+          )}
         </div>
       </div>
     </div>

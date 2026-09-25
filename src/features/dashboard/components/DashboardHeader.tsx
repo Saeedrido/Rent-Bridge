@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { Logo } from '../../../components/common/Logo'
-import { BellIcon, CheckIcon, HomeIcon, SavedIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, ProfileIcon } from './icons'
+import { BellIcon, CheckIcon, HomeIcon, SavedIcon, InspectionsIcon, AgreementIcon, PaymentsIcon } from './icons'
 import { cn } from '../../../utils/cn'
+import { getUser } from '../../../services/api/tokens'
+import { refreshProfile } from '../../../services/api/authApi'
+import { listCallerLeases } from '../../../services/api/leaseApi'
 
 export function DashboardHeader() {
-  const [user, setUser] = useState({ name: 'User', role: 'tenant' })
+  const [user, setUser] = useState({ name: '', role: 'tenant' })
+  const [notificationCount, setNotificationCount] = useState(0)
   const navigate = useNavigate()
   const location = useLocation()
-  const [showDropdown, setShowDropdown] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('home')
 
   const tabs = [
@@ -18,14 +21,40 @@ export function DashboardHeader() {
     { id: 'inspections', label: 'Inspections', Icon: InspectionsIcon },
     { id: 'agreement', label: 'Agreement', Icon: AgreementIcon },
     { id: 'payments', label: 'Payments', Icon: PaymentsIcon },
-    { id: 'profile', label: 'Profile', Icon: ProfileIcon },
   ]
 
   useEffect(() => {
     const storedName = sessionStorage.getItem('rb:username')
     const storedRole = sessionStorage.getItem('rb:role')
-    if (storedRole) {
-      setUser({ name: storedName || 'User', role: storedRole })
+    const auth = getUser()
+    setUser({
+      name: storedName || auth?.name || auth?.email?.split('@')[0] || '',
+      role: storedRole || auth?.role?.toLowerCase() || 'tenant',
+    })
+    refreshProfile().then((profile) => {
+      if (profile) {
+        setUser((prev) => ({
+          name: profile.name || prev.name,
+          role: profile.role ? profile.role.toLowerCase() : prev.role,
+        }))
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    listCallerLeases(1, 100)
+      .then((leases) => {
+        if (!active) return
+        const pending = leases.filter((lease) => {
+          const status = (lease.status ?? '').toLowerCase()
+          return lease.id && !status.includes('fully') && !status.includes('cancel') && !status.includes('declin')
+        }).length
+        setNotificationCount(pending)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
     }
   }, [])
 
@@ -36,13 +65,11 @@ export function DashboardHeader() {
     else if (path === '/inspections') setActiveTab('inspections')
     else if (path === '/agreement') setActiveTab('agreement')
     else if (path === '/payments') setActiveTab('payments')
-    else if (path === '/profile') setActiveTab('profile')
+    else if (path.endsWith('/settings')) setActiveTab('')
   }, [location])
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('rb:role')
-    sessionStorage.removeItem('rb:username')
-    navigate('/role-selection')
+  const openSettings = () => {
+    navigate(user.role === 'agent' ? '/dashboard/agent/settings' : '/dashboard/settings')
   }
 
   return (
@@ -62,15 +89,20 @@ export function DashboardHeader() {
               className="relative flex h-10 w-10 items-center justify-center rounded-full text-forest transition-colors hover:bg-sage-soft"
             >
               <BellIcon />
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-flame px-1 text-[10px] font-bold text-white">
-                3
-              </span>
+              {notificationCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-flame px-1 text-[10px] font-bold text-white">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              )}
             </button>
 
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-forest cursor-pointer"
-                onClick={() => setShowDropdown(!showDropdown)}
-              >
+            <button
+              type="button"
+              onClick={openSettings}
+              aria-label="Open settings"
+              className="flex cursor-pointer items-center gap-3 rounded-full transition-colors hover:bg-sage-soft"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-forest">
                 {user.name?.charAt(0) || 'U'}
               </div>
               <div className="leading-tight hidden sm:block">
@@ -80,15 +112,7 @@ export function DashboardHeader() {
                   {user.role}
                 </div>
               </div>
-            </div>
-
-            {showDropdown && (
-              <div className="absolute right-0 w-32 mt-4 bg-white rounded-lg border border-sage p-4 shadow-lg z-50 min-w-48">
-                <button onClick={handleLogout} className="w-full text-left text-sm text-flame mb-4 underline">
-                  Logout
-                </button>
-              </div>
-            )}
+            </button>
           </div>
         </div>
 

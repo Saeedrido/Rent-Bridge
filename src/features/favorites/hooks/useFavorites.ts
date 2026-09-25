@@ -1,17 +1,33 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useLocalStorage } from '../../../hooks/useLocalStorage'
 
-export function useFavorites() {
-  const [ids, setIds] = useLocalStorage<string[]>('rb:favorites', [])
+export interface FavoriteMeta {
+  savedAt: string
+  availableFrom?: string
+}
 
-  const isFavorite = useCallback((id: string) => ids.includes(id), [ids])
+export function useFavorites() {
+  const [entries, setEntries] = useLocalStorage<Record<string, FavoriteMeta>>('rb:favorites', {})
+
+  const favorites = useMemo(() => Object.keys(entries), [entries])
+
+  const isFavorite = useCallback((id: string) => Boolean(entries[id]), [entries])
+
+  const savedAt = useCallback((id: string): string | undefined => entries[id]?.savedAt, [entries])
 
   const toggle = useCallback(
-    (id: string) => {
-      setIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    (id: string, meta?: Partial<FavoriteMeta>) => {
+      setEntries((prev) => {
+        if (prev[id]) {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        }
+        return { ...prev, [id]: { savedAt: new Date().toISOString(), ...meta } }
+      })
     },
-    [setIds],
+    [setEntries],
   )
 
-  return { favorites: ids, isFavorite, toggle }
+  return { favorites, isFavorite, savedAt, toggle }
 }

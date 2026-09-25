@@ -1,16 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Seo } from '../../../components/common'
-import { HomeIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, ProfileIcon } from '../components/icons'
+import { HomeIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, SearchIcon } from '../components/icons'
 import { ClockIcon, CalendarIcon, DownloadIcon } from './shared'
-import { SearchIcon } from '../components/icons'
-import { RoleDashboardShell, landlordNotifications, caretakerNotifications } from './RoleDashboardShell'
+import { RoleDashboardShell, type NotificationItem, type ShellUser } from './RoleDashboardShell'
 import {
   DashboardModal,
   StatusPill,
   PageHeading,
   EmptyState,
-  ProfileSection,
+  DataErrorBanner,
   useToast,
 } from './shared'
 import {
@@ -19,47 +18,158 @@ import {
   AgreementRecord,
   PaymentRecord,
 } from './data'
-import { initialProperties, initialInspections, initialAgreements, initialPayments, naira, landlordProfile } from './data'
+import { naira } from './data'
+import { getMyProperties, type PropertyRecord } from '../../../services/api/propertyApi'
+import {
+  searchListings,
+  unpublishListing,
+  publishListing,
+  ListingStatus,
+  type ListingRecord,
+} from '../../../services/api/listingApi'
+import { getUser } from '../../../services/api/tokens'
+import { refreshProfile } from '../../../services/api/authApi'
+import {
+  listCallerLeases,
+  confirmInspection,
+  declineInspection,
+  moveToLegalReview,
+  getLeaseAgreementPdf,
+} from '../../../services/api/leaseApi'
+import { getTransactions } from '../../../services/api/dashboardApi'
+import { loadWithFallback, apiErrorMessage } from '../../../services/api/fallback'
+import {
+  leaseToInspectionRequest,
+  leaseToAgreementRecord,
+  transactionToLandlordPayment,
+  isUuid,
+} from '../../../services/api/mappers'
+import { SettingsContent } from '../settings/SettingsPage'
 
-const testProperties: ManagedProperty[] = [
-  {
-    id: 'lp3',
-    title: '3-bedroom duplex, newly renovated',
-    location: 'Ogudu, Kosofe',
-    rent: 2100000,
-    beds: 3,
-    baths: 3,
-    typeLabel: 'Duplex',
-    image: '/home2.jpg',
-    published: true,
-    description: 'Spacious 3-bedroom duplex in a quiet estate off Ogudu Road. Modern fittings, fitted kitchen, borehole water, and generator space.',
-  },
-  {
-    id: 'lp4',
-    title: 'Mini flat, fully serviced',
-    location: 'Surulere',
-    rent: 850000,
-    beds: 1,
-    baths: 1,
-    typeLabel: 'Mini flat',
-    image: '/home3.jpg',
-    published: true,
-    description: 'Cozy mini flat on a calm street in Surulere. Prepaid meter, running water, tiled throughout, and secure compound.',
-  },
-]
+const roleLabel = (role: 'landlord' | 'caretaker', verified: boolean) => {
+  const base = role === 'landlord' ? 'Landlord' : 'Caretaker'
+  return verified ? `Verified ${base}` : base
+}
+
+function notifTime(slot: string): string {
+  return slot ? 'New' : 'Just now'
+}
 
 export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caretaker' }) {
-  const profile = landlordProfile[role]
   const navigate = useNavigate()
+  const authUser = getUser()
 
-  const [user, setUser] = useState({ name: profile.name, email: profile.email, phone: profile.phone })
+  const [user, setUser] = useState({
+    name:
+      authUser?.name ||
+      [authUser?.firstName, authUser?.lastName].filter(Boolean).join(' ') ||
+      authUser?.email?.split('@')[0] ||
+      roleLabel(role, false),
+    email: authUser?.email || '',
+    phone: authUser?.phone || '',
+  })
+  const [verifiedLabel, setVerifiedLabel] = useState(roleLabel(role, authUser?.verified === true))
   const [activeTab, setActiveTab] = useState<string>('properties')
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const allProperties = [...initialProperties, ...testProperties]
-  const [properties, setProperties] = useState<ManagedProperty[]>(allProperties)
-  const [inspections, setInspections] = useState<InspectionRequest[]>(initialInspections)
-  const [agreements, setAgreements] = useState<AgreementRecord[]>(initialAgreements)
-  const [payments] = useState<PaymentRecord[]>(initialPayments)
+  const [properties, setProperties] = useState<ManagedProperty[]>([])
+  const [inspections, setInspections] = useState<InspectionRequest[]>([])
+  const [agreements, setAgreements] = useState<AgreementRecord[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+
+  useEffect(() => {
+    let active = true
+    refreshProfile().then((profile) => {
+      if (!active || !profile) return
+      setUser((prev) => ({
+        name:
+          profile.name ||
+          [profile.firstName, profile.lastName].filter(Boolean).join(' ') ||
+          prev.name,
+        email: profile.email || prev.email,
+        phone: profile.phone || prev.phone,
+      }))
+      setVerifiedLabel(roleLabel(role, profile.verified === true))
+    })
+    return () => {
+      active = false
+    }
+  }, [role])
+
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const [mine, listings] = await Promise.all([
+          getMyProperties({ Page: 1, PageSize: 50 }),
+          searchListings({ Page: 1, PageSize: 50, Mine: true }),
+        ])
+        if (!active) return
+        const byProperty = new Map((mine ?? []).map((p) => [p.id, p]))
+        const records = (listings ?? [])
+          .filter((l) => byProperty.has(l.propertyId as string))
+          .map((l): ManagedProperty => {
+            const prop = byProperty.get(String(l.propertyId))
+            return propertyFromListing(l, prop)
+          })
+        setProperties(records)
+      } catch (err) {
+        const message = apiErrorMessage(err)
+        if (active && message) setLoadError(message)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadWithFallback(
+      async () => (await listCallerLeases(1, 50)).map(leaseToInspectionRequest),
+      [] as InspectionRequest[],
+    ).then((result) => {
+      if (active) {
+        setInspections(result.data)
+        if (result.error) setLoadError(result.error)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadWithFallback(
+      async () => (await listCallerLeases(1, 50)).map(leaseToAgreementRecord),
+      [] as AgreementRecord[],
+    ).then((result) => {
+      if (active) {
+        setAgreements(result.data)
+        if (result.error) setLoadError(result.error)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadWithFallback(
+      async () => (await getTransactions(1, 50)).map(transactionToLandlordPayment),
+      [] as PaymentRecord[],
+    ).then((result) => {
+      if (active) {
+        setPayments(result.data)
+        if (result.error) setLoadError(result.error)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [unpublishConfirm, setUnpublishConfirm] = useState<string | null>(null)
 
@@ -67,22 +177,46 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
 
   const publishedCount = properties.filter((p) => p.published).length
 
-  // Ensure shellUser uses updated count
-  const shellUser = { name: user.name, verifiedLabel: profile.verifiedLabel, notificationCount: 3 }
+  const notifications: NotificationItem[] = inspections
+    .filter((i) => i.status === 'pending')
+    .map((i) => {
+      const prop = properties.find((p) => p.id === i.propertyId)
+      return {
+        id: `notif-${i.id}`,
+        text: `${i.tenant} requested an inspection of ${prop?.title ?? 'your property'}.`,
+        time: notifTime(i.slot),
+      }
+    })
+
+  const shellUser: ShellUser = {
+    name: user.name,
+    verifiedLabel,
+    notificationCount: notifications.length,
+  }
 
   const tabs = [
     { id: 'properties', label: 'My properties', Icon: HomeIcon },
     { id: 'inspections', label: 'Inspections', Icon: InspectionsIcon },
     { id: 'agreement', label: 'Agreement', Icon: AgreementIcon },
     { id: 'payments', label: 'Payments', Icon: PaymentsIcon },
-    { id: 'profile', label: 'Profile', Icon: ProfileIcon },
   ]
 
-  const togglePublished = (id: string) => {
-    setProperties((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, published: !p.published } : p)),
-    )
-    show('Listing updated')
+  const togglePublished = async (id: string) => {
+    const current = properties.find((p) => p.id === id)
+    if (!current) return
+    const isRemote = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(id)
+    try {
+      if (isRemote) {
+        if (current.published) await unpublishListing(id)
+        else await publishListing(id)
+      }
+      setProperties((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, published: !p.published } : p)),
+      )
+      show('Listing updated')
+    } catch {
+      show('Could not update this listing right now.')
+    }
   }
 
   const handleUnpublishConfirm = (id: string) => {
@@ -90,21 +224,61 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
     setUnpublishConfirm(null)
   }
 
-  const handleAcceptInspection = (id: string) => {
+  const handleAcceptInspection = async (id: string) => {
+    if (isUuid(id)) {
+      try {
+        await confirmInspection(id)
+      } catch {
+        show('Could not confirm this inspection right now.')
+        return
+      }
+    }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
     show('Inspection confirmed')
   }
 
-  const handleDeclineInspection = (id: string) => {
+  const handleDeclineInspection = async (id: string) => {
+    if (isUuid(id)) {
+      try {
+        await declineInspection(id)
+      } catch {
+        show('Could not decline this inspection right now.')
+        return
+      }
+    }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'declined' as const } : i)))
     show('Inspection declined')
   }
 
-  const handleSendAgreement = (id: string) => {
+  const handleSendAgreement = async (id: string) => {
+    if (isUuid(id)) {
+      try {
+        await moveToLegalReview(id)
+      } catch {
+        show('Could not send this agreement right now.')
+        return
+      }
+    }
     setAgreements((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status: 'with-lawyer' as const, updated: 'Updated just now' } : a)),
     )
-    show('Sent to Barr. Adeyemi')
+    show('Sent to lawyer for review')
+  }
+
+  const handleDownloadAgreement = async (id: string) => {
+    if (isUuid(id)) {
+      try {
+        const blob = await getLeaseAgreementPdf(id)
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank')
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+        return
+      } catch {
+        show('Could not download the agreement PDF right now.')
+        return
+      }
+    }
+    show('Agreement PDF downloaded')
   }
 
   const renderContent = () => {
@@ -125,55 +299,70 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                 </button>
               }
             />
-            <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              {properties.map((prop, i) => (
-                <article
-                  key={prop.id}
-                  className="anim-rise group flex flex-col overflow-hidden rounded-xl border border-sage bg-white transition-shadow hover:shadow-md"
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={prop.image}
-                      alt={prop.title}
-                      className="aspect-[16/10] w-full object-cover"
-                    />
-                    <StatusPill
-                      tone={prop.published ? 'published' : 'unpublished'}
-                      className="absolute bottom-3 right-3"
-                    >
-                      {prop.published ? 'PUBLISHED' : 'UNPUBLISHED'}
-                    </StatusPill>
-                  </div>
-                  <div className="flex flex-col flex-1 p-6">
-                    <p className="text-sm text-mist">{prop.location}</p>
-                    <h3 className="mt-1 font-serif text-[22px] font-semibold leading-snug text-forest group-hover:underline">
-                      {prop.title}
-                    </h3>
-                    <div className="mt-2 flex items-baseline gap-1">
-                      <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
-                      <span className="text-sm text-mist">/ year</span>
-                    </div>
-                    <div className="my-5 border-t border-sage-line" />
-                    <div className="mt-auto flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setUnpublishConfirm(prop.id)
-                        }}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+            {properties.length === 0 ? (
+              <div className="mt-8">
+                <EmptyState
+                  icon={<HomeIcon className="text-2xl" />}
+                  title="No properties yet"
+                  body="Publish your first apartment so tenants can find it in search results."
+                />
+              </div>
+            ) : (
+              <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                {properties.map((prop, i) => (
+                  <article
+                    key={prop.id}
+                    className="anim-rise group flex flex-col overflow-hidden rounded-xl border border-sage bg-white transition-shadow hover:shadow-md"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                  >
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={prop.image}
+                        alt={prop.title}
+                        className="aspect-[16/10] w-full object-cover"
+                      />
+                      <StatusPill
+                        tone={prop.published ? 'published' : 'unpublished'}
+                        className="absolute bottom-3 right-3"
                       >
-                        {prop.published ? 'Unpublish' : 'Publish'}
-                      </button>
-                      <span className="text-sm text-mist shrink-0">
-                        {inspections.filter((ir) => ir.propertyId === prop.id).length} inspection requests
-                      </span>
+                        {prop.published ? 'PUBLISHED' : 'UNPUBLISHED'}
+                      </StatusPill>
                     </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+                    <div className="flex flex-col flex-1 p-6">
+                      <p className="text-sm text-mist">{prop.location}</p>
+                      <h3 className="mt-1 font-serif text-[22px] font-semibold leading-snug text-forest group-hover:underline">
+                        {prop.title}
+                      </h3>
+                      <div className="mt-2 flex items-baseline gap-1">
+                        <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
+                        <span className="text-sm text-mist">/ year</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist">
+                        <span className="capitalize">{prop.typeLabel}</span>
+                        {prop.beds > 0 && <span>· {prop.beds} bed</span>}
+                        {prop.baths > 0 && <span>· {prop.baths} bath</span>}
+                      </div>
+                      <div className="my-5 border-t border-sage-line" />
+                      <div className="mt-auto flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setUnpublishConfirm(prop.id)
+                          }}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                        >
+                          {prop.published ? 'Unpublish' : 'Publish'}
+                        </button>
+                        <span className="text-sm text-mist shrink-0">
+                          {inspections.filter((ir) => ir.propertyId === prop.id).length} inspection requests
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <DashboardModal open={!!unpublishConfirm} onClose={() => setUnpublishConfirm(null)} title="Unpublish listing?">
               <div className="space-y-2 text-sm text-[#374151]">
@@ -227,7 +416,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-[15px] text-ink truncate">{insp.tenant}</p>
-                        <p className="mt-0.5 text-sm text-mist">{prop?.title}</p>
+                        <p className="mt-0.5 text-sm text-mist">{prop?.title ?? 'Listing'}</p>
                         <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-mist">
                           <ClockIcon /> {insp.slot}
                         </p>
@@ -317,7 +506,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                       {ag.status === 'signed' && (
                         <button
                           type="button"
-                          onClick={() => show('Agreement PDF downloaded')}
+                          onClick={() => handleDownloadAgreement(ag.id)}
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
                         >
                           <DownloadIcon /> Download
@@ -332,21 +521,23 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
         )
 
       case 'payments':
-        const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
-        const pending = payments.filter((p) => p.status === 'pending').reduce((s, p) => s + p.amount, 0)
+        const paid = payments.filter((p) => p.status === 'paid')
+        const pendingPmts = payments.filter((p) => p.status === 'pending')
+        const collected = paid.reduce((s, p) => s + p.amount, 0)
+        const pendingTotal = pendingPmts.reduce((s, p) => s + p.amount, 0)
         return (
           <>
             <PageHeading title="Payments" subtitle="Rent collected across your listings." />
             <div className="mt-8 rounded-xl border border-sage bg-white p-6 grid grid-cols-2 divide-x divide-sage">
               <div className="px-4 py-2">
-                <p className="text-xs font-bold uppercase tracking-[0.07em] text-mist">Collected in 2026</p>
+                <p className="text-xs font-bold uppercase tracking-[0.07em] text-mist">Collected</p>
                 <p className="mt-1 font-serif text-2xl font-bold text-ink">{naira(collected)}</p>
-                <p className="text-sm text-mist">1 payment</p>
+                <p className="text-sm text-mist">{paid.length} payment{paid.length === 1 ? '' : 's'}</p>
               </div>
               <div className="px-4 py-2">
                 <p className="text-xs font-bold uppercase tracking-[0.07em] text-mist">Outstanding</p>
-                <p className="mt-1 font-serif text-2xl font-bold text-ink">{naira(pending)}</p>
-                <p className="text-sm text-mist">1 pending</p>
+                <p className="mt-1 font-serif text-2xl font-bold text-ink">{naira(pendingTotal)}</p>
+                <p className="text-sm text-mist">{pendingPmts.length} pending</p>
               </div>
             </div>
             <div className="mt-4 space-y-3">
@@ -372,16 +563,14 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
           </>
         )
 
-      case 'profile':
+      case 'settings':
         return (
-          <>
-            <PageHeading title="Profile" />
-            <ProfileSection
-              initial={user}
-              verifiedLabel={profile.verifiedLabel}
-              onSave={(data) => setUser(data)}
-            />
-          </>
+          <SettingsContent
+            role={role}
+            user={user}
+            verifiedLabel={verifiedLabel}
+            onProfileSave={setUser}
+          />
         )
 
       default:
@@ -397,14 +586,42 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
       />
       <RoleDashboardShell
         user={shellUser}
-        notifications={role === 'landlord' ? landlordNotifications : caretakerNotifications}
+        notifications={notifications}
         tabs={tabs}
         active={activeTab}
         onChange={setActiveTab}
       >
+        <DataErrorBanner message={loadError} />
         {renderContent()}
       </RoleDashboardShell>
     </>
   )
 }
 
+function propertyFromListing(l: ListingRecord, prop: PropertyRecord | undefined): ManagedProperty {
+  const status = Number(l.status)
+  const propType = (prop?.propertyType as string) || 'Property'
+  const beds = num(prop?.bedrooms ?? prop?.beds)
+  const baths = num(prop?.bathrooms ?? prop?.baths)
+  return {
+    id: l.id ?? String(l.propertyId),
+    title: l.title ?? (prop?.title as string) ?? 'Untitled listing',
+    location:
+      (prop?.location as string) ||
+      [(prop?.area as string), (prop?.city as string), (prop?.state as string)].filter(Boolean).join(', ') ||
+      (prop?.street as string) ||
+      '',
+    rent: num(l.priceAmount ?? prop?.price),
+    beds,
+    baths,
+    typeLabel: propType,
+    image: (prop?.coverImage as string) ?? (prop?.images as string[] | undefined)?.[0] ?? '/home1.jpg',
+    published: status === ListingStatus.Published,
+    description: (l.description as string) || (prop?.description as string) || '',
+  }
+}
+
+function num(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}

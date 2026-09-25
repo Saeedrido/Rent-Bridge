@@ -1,15 +1,34 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Seo } from '../../components/common'
-import { dashboardProperties } from '../../features/dashboard/data/dashboardProperties'
+import type { DashboardProperty } from '../../features/dashboard/data/dashboardProperties'
 import { SearchFilters } from '../../features/dashboard/components/SearchFilters'
 import { PropertyGrid } from '../../features/dashboard/components/PropertyGrid'
 import { TenantInspectionsPage } from '../../features/dashboard/tenant/TenantInspectionsPage2'
 import { TenantPaymentsPage } from '../../features/dashboard/tenant/TenantPaymentsPage'
 import { TenantSavedPage } from '../../features/dashboard/tenant/TenantSavedPage'
-import { initialSavedProperties, type SavedProperty, tenantAgreements, getAgreementStatus } from './tenant/tenantData'
+import { getAgreementStatus, type SavedProperty, type TenantAgreement } from './tenant/tenantData'
 import { useLocation } from 'react-router-dom'
 import { Link } from 'react-router-dom'
-import { StatusPill, ToastProvider } from '@/features/dashboard/roleDashboards/shared'
+import { StatusPill, ToastProvider, VerificationCard, DataErrorBanner } from '@/features/dashboard/roleDashboards/shared'
+import { propertyService } from '../../features/properties/services/propertyService'
+import { propertyToDashboardProperty, leaseToTenantAgreement } from '../../services/api/mappers'
+import { listCallerLeases } from '../../services/api/leaseApi'
+import { loadWithFallback, apiErrorMessage } from '../../services/api/fallback'
+import { getUser } from '../../services/api/tokens'
+import { refreshProfile } from '../../services/api/authApi'
+import { useFavorites } from '../../features/favorites/hooks/useFavorites'
+import { SettingsContent, type SettingsUser } from './settings/SettingsPage'
+
+function displayNameFromAuth(fallback: string): string {
+  const authUser = getUser()
+  if (!authUser) return fallback
+  return (
+    authUser.name ||
+    [authUser.firstName, authUser.lastName].filter(Boolean).join(' ') ||
+    authUser.email?.split('@')[0] ||
+    fallback
+  )
+}
 
 export function TenantDashboard() {
   const [location, setLocation] = useState('')
@@ -23,42 +42,99 @@ export function TenantDashboard() {
     if (path === '/payments') return 'payments'
     if (path === '/saved') return 'saved'
     if (path === '/agreement') return 'agreement'
-    if (path === '/profile') return 'profile'
+    if (path === '/settings') return 'settings'
     return 'home'
   })()
 
-  const [savedProperties, setSavedProperties] = useState<SavedProperty[]>(initialSavedProperties)
+  const [gridProperties, setGridProperties] = useState<DashboardProperty[]>([])
+  const [agreements, setAgreements] = useState<TenantAgreement[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [tenantUser, setTenantUser] = useState<SettingsUser>(() => {
+    const authUser = getUser()
+    return {
+      name: displayNameFromAuth(''),
+      email: authUser?.email ?? '',
+      phone: authUser?.phone ?? '',
+    }
+  })
+  const { favorites, toggle: toggleFavorite, savedAt } = useFavorites()
+
+  useEffect(() => {
+    let active = true
+    refreshProfile().then((profile) => {
+      if (active && profile) {
+        setTenantUser({
+          name: profile.name || profile.email?.split('@')[0] || '',
+          email: profile.email ?? '',
+          phone: profile.phone ?? '',
+        })
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    propertyService.getProperties()
+      .then((items) => {
+        if (active) setGridProperties(items.map(propertyToDashboardProperty))
+      })
+      .catch((err) => {
+        const message = apiErrorMessage(err)
+        if (active && message) setLoadError(message)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    loadWithFallback(
+      async () => {
+        const leases = await listCallerLeases(1, 50)
+        return leases.map((lease) => leaseToTenantAgreement(lease))
+      },
+      [],
+    ).then((result) => {
+      if (active) {
+        setAgreements(result.data)
+        if (result.error) setLoadError(result.error)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const savedProperties = useMemo<SavedProperty[]>(
+    () =>
+      favorites
+        .map((id) => {
+          const match = gridProperties.find((p) => p.id === id)
+          return match ? { ...match, savedAt: savedAt(id) ?? '' } : null
+        })
+        .filter((entry): entry is SavedProperty => entry !== null),
+    [favorites, gridProperties, savedAt],
+  )
 
   const filtered = useMemo(() => {
     const loc = location.trim().toLowerCase()
     const priceNum = Number(maxPrice)
-    return dashboardProperties.filter((p) => {
+    return gridProperties.filter((p) => {
       const locOk = loc === '' || p.location.toLowerCase().includes(loc)
       const priceOk = maxPrice.trim() === '' || (!isNaN(priceNum) && p.price <= priceNum)
       const typeOk = type === 'all' || p.type === type
       return locOk && priceOk && typeOk
     })
-  }, [location, maxPrice, type])
+  }, [gridProperties, location, maxPrice, type])
 
   const clear = () => {
     setLocation('')
     setMaxPrice('')
     setType('all')
-  }
-
-  const handleToggleSave = (propertyId: string) => {
-    setSavedProperties(prev => {
-      const existing = prev.find(p => p.id === propertyId)
-      if (existing) {
-        return prev.filter(p => p.id !== propertyId)
-      } else {
-        const property = dashboardProperties.find(p => p.id === propertyId)
-        if (property) {
-          return [...prev, { ...property, savedAt: new Date().toISOString() }]
-        }
-        return prev
-      }
-    })
   }
 
   const renderTabContent = () => {
@@ -67,7 +143,7 @@ export function TenantDashboard() {
         return (
           <div className="px-[clamp(16px,4vw,40px)] pb-16 pt-0">
             <header className="mb-1">
-              <h1 className="font-serif text-3xl font-bold text-green-dark md:text-4xl">Homes near Yaba, Lagos</h1>
+              <h1 className="font-serif text-3xl font-bold text-green-dark md:text-4xl">Find your next home</h1>
               <p className="mt-0 text-ink/70">
                 {filtered.length} verified homes matching your search
               </p>
@@ -87,7 +163,7 @@ export function TenantDashboard() {
               <PropertyGrid 
                 properties={filtered} 
                 savedProperties={savedProperties.map(p => p.id)}
-                onToggleSave={handleToggleSave}
+                onToggleSave={toggleFavorite}
               />
             </div>
           </div>
@@ -100,8 +176,8 @@ export function TenantDashboard() {
         return (
           <TenantSavedPage
             savedProperties={savedProperties}
-            onRemoveFromSaved={handleToggleSave}
-            onToggleSave={handleToggleSave}
+            onRemoveFromSaved={toggleFavorite}
+            onToggleSave={toggleFavorite}
           />
         )
       case 'agreement':
@@ -110,12 +186,12 @@ export function TenantDashboard() {
             <header className="mb-2">
               <h1 className="font-serif text-3xl font-bold text-green-dark md:text-4xl">Agreements</h1>
               <p className="mt-0.5 text-ink/70">
-                {tenantAgreements.filter(a => a.propertyId && savedProperties.some(p => p.id === a.propertyId)).length} agreements
+                {agreements.length} agreements
               </p>
             </header>
 
 <div className="mt-6 space-y-4">
-              {tenantAgreements.filter(a => a.propertyId && savedProperties.some(p => p.id === a.propertyId)).length === 0 ? (
+              {agreements.length === 0 ? (
                 <div className="rounded-xl border border-sage bg-white p-12 text-center">
                   <svg className="w-12 h-12 mx-auto text-mist mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2H7a2 2 0 01-2-2v-6" />
@@ -125,7 +201,7 @@ export function TenantDashboard() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {tenantAgreements.filter(a => a.propertyId && savedProperties.some(p => p.id === a.propertyId)).map((agreement) => (
+                  {agreements.map((agreement) => (
                     <Link
                       key={agreement.id}
                       to={`/dashboard/agreement/${agreement.id}`}
@@ -164,36 +240,10 @@ export function TenantDashboard() {
             </div>
           </div>
         )
-      case 'profile':
+      case 'settings':
         return (
-          <div className="px-[clamp(16px,4vw,40px)] pb-16 pt-8">
-            <h1 className="font-serif text-3xl font-bold text-green-dark md:text-4xl mb-6">Profile</h1>
-            <div className="rounded-xl border border-sage bg-white p-8 max-w-xl">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-sage-soft text-2xl font-bold text-forest">
-                  T
-                </div>
-                <div>
-                  <h2 className="font-serif text-xl font-semibold text-ink">Tenant User</h2>
-                  <p className="mt-1 text-sm text-mist">tenant@rentbridge.ng</p>
-                  <p className="text-sm text-mist">+234 803 555 0123</p>
-                </div>
-              </div>
-              <div className="rounded-xl border border-sage bg-white p-6">
-                <div className="flex items-start gap-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sage-soft">
-                    <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="text-forest">
-                      <path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6l7-3z" />
-                      <path d="M9 12l2.2 2.2L15.5 9.7" />
-                    </svg>
-                  </div>
-                  <div className="pt-1">
-                    <h3 className="font-semibold text-ink">Identity verified</h3>
-                    <p className="mt-1 text-sm text-mist">Verified Tenant · KYC completed on 4 Feb 2026</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="px-[clamp(16px,4vw,40px)] pb-16 pt-4">
+            <SettingsContent role="tenant" user={tenantUser} onProfileSave={setTenantUser} />
           </div>
         )
       default:
@@ -204,18 +254,41 @@ export function TenantDashboard() {
   return (
     <ToastProvider>
       <Seo title="Tenant Dashboard · Rent Bridge" description="Your Rent Bridge tenant dashboard" />
+      {loadError && <div className="px-[clamp(16px,4vw,40px)] pt-8"><DataErrorBanner message={loadError} /></div>}
       {renderTabContent()}
     </ToastProvider>
   )
 }
 
 export function AgentDashboard() {
+  const routerLocation = useLocation()
+  const [agentUser, setAgentUser] = useState<SettingsUser>(() => {
+    const authUser = getUser()
+    return {
+      name: displayNameFromAuth('Agent'),
+      email: authUser?.email ?? '',
+      phone: authUser?.phone ?? '',
+    }
+  })
   const [location, setLocation] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
   const [type, setType] = useState('all')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [agentProperties, setAgentProperties] = useState<DashboardProperty[]>([])
 
-  const agentProperties = useMemo(() => {
-    return dashboardProperties.filter((p) => p.id === 'd1' || p.id === 'd3' || p.id === 'd5')
+  useEffect(() => {
+    let active = true
+    propertyService.getProperties()
+      .then((items) => {
+        if (active) setAgentProperties(items.map(propertyToDashboardProperty))
+      })
+      .catch((err) => {
+        const message = apiErrorMessage(err)
+        if (active && message) setLoadError(message)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   const filtered = useMemo(() => {
@@ -227,7 +300,7 @@ export function AgentDashboard() {
       const typeOk = type === 'all' || p.type === type
       return locOk && priceOk && typeOk
     })
-  }, [location, maxPrice, type])
+  }, [agentProperties, location, maxPrice, type])
 
   const clear = () => {
     setLocation('')
@@ -235,8 +308,17 @@ export function AgentDashboard() {
     setType('all')
   }
 
+  if (routerLocation.pathname.endsWith('/settings')) {
+    return (
+      <div className="px-[clamp(16px,4vw,40px)] pb-16 pt-8">
+        <SettingsContent role="agent" user={agentUser} onProfileSave={setAgentUser} />
+      </div>
+    )
+  }
+
   return (
     <div className="px-[clamp(16px,4vw,40px)] pb-16 pt-8">
+      <DataErrorBanner message={loadError} />
       <header className="mb-6">
         <h1 className="font-serif text-3xl font-bold text-green-dark md:text-4xl">
           Agent Properties
@@ -245,6 +327,10 @@ export function AgentDashboard() {
           {filtered.length} agent properties matching your search
         </p>
       </header>
+
+      <div className="mb-6 max-w-xl">
+        <VerificationCard />
+      </div>
 
       <SearchFilters
         location={location}

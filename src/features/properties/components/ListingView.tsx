@@ -4,7 +4,8 @@ import type { SearchFilters } from '../../search/types/search'
 import { useSearchFilters } from '../../search/hooks/useSearchFilters'
 import { SearchFilters as FiltersPanel } from '../../search/components/SearchFilters'
 import { PropertyCard } from '../../../components/common'
-import { Button, EmptyState } from '../../../components/ui'
+import { Button, EmptyState, Spinner } from '../../../components/ui'
+import { DataErrorBanner } from '../../../features/dashboard/roleDashboards/shared'
 
 interface Props {
   initialFilters?: Partial<SearchFilters>
@@ -15,7 +16,7 @@ export function ListingView({ initialFilters }: Props) {
   const stateLocation = (location.state as { location?: string } | null)?.location
 
   const [showFilters, setShowFilters] = useState(false)
-  const { filters, updateFilter, toggleAmenity, reset, properties } = useSearchFilters({
+  const { filters, updateFilter, toggleAmenity, reset, properties, loading, error } = useSearchFilters({
     ...initialFilters,
     ...(stateLocation ? { location: stateLocation } : {}),
   })
@@ -43,7 +44,13 @@ export function ListingView({ initialFilters }: Props) {
           </Button>
         </div>
 
-        {properties.length === 0 ? (
+        <DataErrorBanner message={error} />
+
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <Spinner className="h-8 w-8" />
+          </div>
+        ) : properties.length === 0 ? (
           <EmptyState
             title="No properties match your filters"
             description="Try widening your price range or clearing a few filters."

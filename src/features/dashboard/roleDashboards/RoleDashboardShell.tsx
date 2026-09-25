@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Logo } from '../../../components/common/Logo'
 import { cn } from '../../../utils/cn'
 import { BellIcon, CheckIcon } from '../components/icons'
@@ -22,24 +22,6 @@ export interface NotificationItem {
   text: string
   time: string
 }
-
-export const landlordNotifications: NotificationItem[] = [
-  { id: 'n1', text: 'Chiamaka Obi requested an inspection of your Sabo, Yaba flat.', time: '2h ago' },
-  { id: 'n2', text: 'Agreement for Sabo, Yaba is now with Barr. Adeyemi.', time: '1d ago' },
-  { id: 'n3', text: '₦1,400,000 rent payment was received from Fatima Yusuf.', time: '12 Aug' },
-]
-
-export const lawyerNotifications: NotificationItem[] = [
-  { id: 'n1', text: 'A new listing at Ogudu, Kosofe was assigned to your desk.', time: '3h ago' },
-  { id: 'n2', text: 'Adaeze Okonkwo\u2019s agreement is waiting on your review.', time: '1d ago' },
-  { id: 'n3', text: 'Ikeja GRA studio agreement was signed by both parties.', time: '9 Aug' },
-]
-
-export const caretakerNotifications: NotificationItem[] = [
-  { id: 'n1', text: 'Fatima Yusuf confirmed inspection for Sabo, Yaba flat.', time: '4h ago' },
-  { id: 'n2', text: 'New inquiry on Gbagada terrace from Tunde Alabi.', time: '1d ago' },
-  { id: 'n3', text: 'Monthly statement for September is ready.', time: '10 Aug' },
-]
 
 function NotificationBell({ count, items }: { count: number; items: NotificationItem[] }) {
   const [open, setOpen] = useState(false)
@@ -92,6 +74,7 @@ export function RoleDashboardShell({
   tabs,
   active,
   onChange,
+  settingsTo,
   children,
 }: {
   user: ShellUser
@@ -99,8 +82,15 @@ export function RoleDashboardShell({
   tabs: NavTab[]
   active: string
   onChange: (id: string) => void
+  settingsTo?: string
   children: ReactNode
 }) {
+  const navigate = useNavigate()
+  const openSettings = () => {
+    if (settingsTo) navigate(settingsTo)
+    else onChange('settings')
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen bg-sand">
@@ -117,9 +107,9 @@ export function RoleDashboardShell({
 
                 <button
                   type="button"
-                  onClick={() => onChange('profile')}
-                  className="flex items-center gap-3 rounded-full transition-colors hover:bg-sand/70"
-                  aria-label="Open profile"
+                  onClick={openSettings}
+                  className="flex cursor-pointer items-center gap-3 rounded-full transition-colors hover:bg-sand/70"
+                  aria-label="Open settings"
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-forest">
                     {user.name.charAt(0)}

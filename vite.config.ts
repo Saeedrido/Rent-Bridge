@@ -9,4 +9,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    watch: {
+      usePolling: true,
+    },
+    proxy: {
+      '/api/v1': {
+        target: 'https://rentbridge-5pwk.onrender.com',
+        changeOrigin: true,
+      },
+    },
+  },
 })
