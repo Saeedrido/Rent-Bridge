@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeading, EmptyState, DataErrorBanner } from '../roleDashboards/shared'
+import { Button } from '../../../components/ui'
 import { InspectionCard } from './InspectionCard'
 import { loadWithFallback } from '../../../services/api/fallback'
 import { listCallerLeases } from '../../../services/api/leaseApi'
@@ -9,32 +10,47 @@ import { leaseToInspection } from '../../../services/api/mappers'
 export function TenantInspectionsPage() {
   const [inspections, setInspections] = useState([] as ReturnType<typeof leaseToInspection>[])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    let active = true
-    loadWithFallback(
-      async () => {
-        const leases = await listCallerLeases(1, 50)
-        return leases.map(leaseToInspection)
-      },
-      [],
-      (value) => value.length === 0,
-    ).then((result) => {
-      if (active) {
-        setInspections(result.data)
-        if (result.error) setLoadError(result.error)
-      }
-    })
-    return () => {
-      active = false
+  const loadInspections = async () => {
+    setLoading(true)
+    try {
+      const result = await loadWithFallback(
+        async () => {
+          const leases = await listCallerLeases(1, 50)
+          return leases.map(leaseToInspection)
+        },
+        [],
+        (value) => value.length === 0,
+      )
+      setInspections(result.data)
+      if (result.error) setLoadError(result.error)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
+    loadInspections()
   }, [])
 
   return (
     <div className="px-[clamp(16px,4vw,40px)]">
       <DataErrorBanner message={loadError} />
-      <PageHeading title="Inspections" subtitle="Your scheduled property inspections" />
+      <PageHeading 
+        title="Inspections" 
+        subtitle="Your scheduled property inspections"
+        action={
+          <Button 
+            variant="outline"
+            onClick={loadInspections}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        }
+      />
       <div className="mt-8">
         {inspections.length === 0 ? (
           <EmptyState

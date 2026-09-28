@@ -24,10 +24,9 @@ import {
   formatDate,
   formatShortDate,
 } from '../../../services/api/mappers'
-import { loadWithFallback } from '../../../services/api/fallback'
+import { loadWithFallback, apiErrorMessage } from '../../../services/api/fallback'
 import { getUser } from '../../../services/api/tokens'
 import { refreshProfile } from '../../../services/api/authApi'
-import { ApiError } from '../../../services/api/client'
 import type { AgreementClause } from '../tenant/tenantData'
 import { OwnershipReviewQueue } from './OwnershipReviewQueue'
 
@@ -195,7 +194,7 @@ export function LawyerDashboard() {
       })
       .catch((err) => {
         if (active) {
-          setReviewError(err instanceof ApiError ? err.message : 'Could not load the agreement right now.')
+          setReviewError(apiErrorMessage(err) || 'Could not load the agreement right now.')
         }
       })
       .finally(() => {
@@ -248,7 +247,7 @@ export function LawyerDashboard() {
     try {
       await certifyLease(activeReviewId)
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not certify this agreement right now.')
+      show(apiErrorMessage(err) || 'Could not certify this agreement right now.')
       setSubmitting(false)
       return
     }
@@ -270,8 +269,8 @@ export function LawyerDashboard() {
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank')
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
-    } catch {
-      show('Could not download the agreement PDF right now.')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not download the agreement PDF right now.')
     }
   }
 

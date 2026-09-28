@@ -179,6 +179,7 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
         availableFrom: formData.availableFrom || undefined,
         amenities: amenities.length > 0 ? amenities : undefined,
         documentUrls: documents,
+        imageUrls: photos.length > 0 ? photos : undefined,
       })
       const listing = await createListing({
         propertyId: property.id,

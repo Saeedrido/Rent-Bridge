@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { inputClass, useToast } from './shared'
+import { apiErrorMessage } from '../../../services/api/fallback'
 import {
   getBanks,
   resolvePayoutAccount,
@@ -8,7 +9,6 @@ import {
   type Bank,
   type PayoutAccountRecord,
 } from '../../../services/api/payoutApi'
-import { ApiError } from '../../../services/api/client'
 
 function maskAccount(value?: string): string {
   const raw = value ?? ''
@@ -52,7 +52,7 @@ export function PayoutAccountSection() {
       setAccountName(result?.accountName ?? '')
       if (!result?.accountName) show('Account could not be resolved. Check the details.')
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Account could not be resolved.')
+      show(apiErrorMessage(err) || 'Account could not be resolved.')
     } finally {
       setResolving(false)
     }
@@ -75,7 +75,7 @@ export function PayoutAccountSection() {
       setAccount(saved)
       show('Payout account saved')
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not save the payout account.')
+      show(apiErrorMessage(err) || 'Could not save the payout account.')
     } finally {
       setSaving(false)
     }

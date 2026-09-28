@@ -47,6 +47,7 @@ export function TenantDashboard() {
   })()
 
   const [gridProperties, setGridProperties] = useState<DashboardProperty[]>([])
+  const [gridPropertiesLoading, setGridPropertiesLoading] = useState(true)
   const [agreements, setAgreements] = useState<TenantAgreement[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tenantUser, setTenantUser] = useState<SettingsUser>(() => {
@@ -79,11 +80,15 @@ export function TenantDashboard() {
     let active = true
     propertyService.getProperties()
       .then((items) => {
-        if (active) setGridProperties(items.map(propertyToDashboardProperty))
+        if (active) {
+          setGridProperties(items.map(propertyToDashboardProperty))
+          setGridPropertiesLoading(false)
+        }
       })
       .catch((err) => {
         const message = apiErrorMessage(err)
         if (active && message) setLoadError(message)
+        if (active) setGridPropertiesLoading(false)
       })
     return () => {
       active = false
@@ -164,6 +169,7 @@ export function TenantDashboard() {
                 properties={filtered} 
                 savedProperties={savedProperties.map(p => p.id)}
                 onToggleSave={toggleFavorite}
+                loading={gridPropertiesLoading}
               />
             </div>
           </div>
@@ -275,16 +281,21 @@ export function AgentDashboard() {
   const [type, setType] = useState('all')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [agentProperties, setAgentProperties] = useState<DashboardProperty[]>([])
+  const [agentPropertiesLoading, setAgentPropertiesLoading] = useState(true)
 
   useEffect(() => {
     let active = true
     propertyService.getProperties()
       .then((items) => {
-        if (active) setAgentProperties(items.map(propertyToDashboardProperty))
+        if (active) {
+          setAgentProperties(items.map(propertyToDashboardProperty))
+          setAgentPropertiesLoading(false)
+        }
       })
       .catch((err) => {
         const message = apiErrorMessage(err)
         if (active && message) setLoadError(message)
+        if (active) setAgentPropertiesLoading(false)
       })
     return () => {
       active = false
@@ -343,7 +354,7 @@ export function AgentDashboard() {
       />
 
       <div className="mt-8">
-        <PropertyGrid properties={filtered} />
+        <PropertyGrid properties={filtered} loading={agentPropertiesLoading} />
       </div>
     </div>
   )

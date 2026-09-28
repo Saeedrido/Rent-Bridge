@@ -43,6 +43,8 @@ export function errorFromBody(body: unknown, fallback: string): string {
 
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
+  showLoading?: boolean
+  loadingMessage?: string
 }
 
 let refreshPromise: Promise<string | null> | null = null
@@ -86,23 +88,20 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 async function rawRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { showLoading = true, loadingMessage, ...fetchOptions } = options
+
   const token = getAccessToken()
-  const headers = new Headers(options.headers)
+  const headers = new Headers(fetchOptions.headers)
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  // DEBUG: Log headers being sent
-  console.log('[API] Request:', path, 'Headers:', Object.fromEntries(headers.entries()))
 
   const url = `${API_BASE_URL}${path.startsWith(API_PREFIX) ? path : `${API_PREFIX}${path}`}`
 
   let response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: fetchOptions.body !== undefined ? JSON.stringify(fetchOptions.body) : undefined,
   })
-
-  // DEBUG: Log response
-  console.log('[API] Response:', path, response.status, response.statusText)
 
   if (response.status === 401 && !path.includes('/auth/refresh')) {
     if (!refreshPromise) {
@@ -112,17 +111,32 @@ async function rawRequest<T>(path: string, options: RequestOptions = {}): Promis
     }
     const newToken = await refreshPromise
     if (newToken) {
+      const headers = new Headers(fetchOptions.headers)
+      headers.set('Content-Type', 'application/json')
       headers.set('Authorization', `Bearer ${newToken}`)
-      response = await fetch(url, {
-        ...options,
+      const response2 = await fetch(url, {
+        ...fetchOptions,
         headers,
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body: fetchOptions.body !== undefined ? JSON.stringify(fetchOptions.body) : undefined,
       })
+      if (!response2.ok) {
+        let fallback = `Request failed (${response2.status})`
+        let body: unknown = null
+        try {
+          body = await response2.json()
+        } catch {
+          /* noop */
+        }
+        if (response2.status === 401) clearAuth()
+        throw new ApiError(errorFromBody(body, fallback), response2.status)
+      }
+      return (await response2.json()) as T
     }
+
   }
 
   if (!response.ok) {
-    let fallback = `Request failed (${response.status})`
+    const fallback = `Request failed (${response.status})`
     let body: unknown = null
     try {
       body = await response.json()
@@ -133,7 +147,9 @@ async function rawRequest<T>(path: string, options: RequestOptions = {}): Promis
     throw new ApiError(errorFromBody(body, fallback), response.status)
   }
 
-  if (response.status === 204) return undefined as T
+  if (response.status === 204) {
+    return undefined as T
+  }
   if (response.headers.get('content-type')?.includes('application/pdf')) {
     return (await response.blob()) as unknown as T
   }

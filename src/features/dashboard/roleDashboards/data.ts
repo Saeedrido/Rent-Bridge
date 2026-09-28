@@ -1,5 +1,6 @@
 export interface ManagedProperty {
   id: string
+  listingId?: string
   title: string
   location: string
   rent: number
@@ -8,6 +9,7 @@ export interface ManagedProperty {
   typeLabel: string
   image: string
   published: boolean
+  verified: boolean
   description: string
 }
 

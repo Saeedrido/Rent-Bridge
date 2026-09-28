@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { getKycStatus, type KycStatusValue } from '../../../services/api/kycApi'
+import { getUser } from '../../../services/api/tokens'
 import { cn } from '../../../utils/cn'
 
 export { cn }
@@ -279,6 +280,61 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/* --------------------------- global loading state ------------------------- */
+
+interface LoadingContextValue {
+  show: (message?: string) => void
+  hide: () => void
+  isLoading: boolean
+}
+
+const LoadingContext = createContext<LoadingContextValue>({
+  show: () => {},
+  hide: () => {},
+  isLoading: false,
+})
+
+export function LoadingProvider({ children }: { children: ReactNode }) {
+  const [isLoading, setIsLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState('')
+
+  const show = useCallback((message?: string) => {
+    setLoadingMessage(message || 'Loading...')
+    setIsLoading(true)
+  }, [])
+
+  const hide = useCallback(() => {
+    setIsLoading(false)
+    setLoadingMessage('')
+  }, [])
+
+  return (
+    <LoadingContext.Provider value={{ show, hide, isLoading }}>
+      {children}
+      {isLoading && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm" role="status" aria-live="polite">
+          <div className="bg-white rounded-xl p-6 flex flex-col items-center gap-3 shadow-xl max-w-md w-full mx-4">
+            <div className="relative w-10 h-10">
+              <svg className="animate-spin w-full h-full text-forest" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+                <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" fill="none" strokeDasharray="31.4 31.4">
+                  <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                </circle>
+              </svg>
+            </div>
+            <p className="text-sm font-medium text-ink">{loadingMessage || 'Loading...'}</p>
+          </div>
+        </div>
+      )}
+    </LoadingContext.Provider>
+  )
+}
+
+export function useGlobalLoading() {
+  return useContext(LoadingContext)
+}
+
 /* ---------------------------------- modal --------------------------------- */
 
 export function DashboardModal({
@@ -523,13 +579,22 @@ export function ProfileSection({
 export function VerificationCard({ verifiedLabel }: { verifiedLabel?: string }) {
   const navigate = useNavigate()
   const [state, setState] = useState<'loading' | KycStatusValue>('loading')
+  const user = getUser()
 
   useEffect(() => {
     let active = true
     ;(async () => {
       try {
         const status = await getKycStatus()
-        if (active) setState(status?.status ?? 'none')
+        if (active) {
+          // If user is already verified via auth, override KYC status
+          const isVerified = user?.verified === true
+          if (isVerified) {
+            setState('verified')
+          } else {
+            setState(status?.status ?? 'none')
+          }
+        }
       } catch {
         if (active) setState('none')
       }

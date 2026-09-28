@@ -38,7 +38,9 @@ export interface LoadResult<T> {
 }
 
 export function apiErrorMessage(err: unknown): string {
-  return err instanceof ApiError && err.status !== 0 && err.message ? err.message : ''
+  if (err instanceof ApiError && err.status !== 0 && err.message) return err.message
+  if (err instanceof Error && err.message) return err.message
+  return ''
 }
 
 export async function loadWithFallback<T>(

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button, Input, Field } from '../../../components/ui'
 import { loginUser } from '../../../services/api/authApi'
 import { getUser, normalizeRole } from '../../../services/api/tokens'
-import { ApiError } from '../../../services/api/client'
+import { apiErrorMessage } from '../../../services/api/fallback'
 
 function dashboardPathForRole(role: string): string {
   switch (role) {
@@ -39,7 +39,7 @@ export function LoginForm() {
       const user = getUser()
       navigate(dashboardPathForRole(normalizeRole(user?.role)))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to log in. Please try again.')
+      setError(apiErrorMessage(err) || 'Unable to log in. Please try again.')
     } finally {
       setSubmitting(false)
     }

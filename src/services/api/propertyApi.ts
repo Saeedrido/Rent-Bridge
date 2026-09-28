@@ -1,4 +1,4 @@
-import { apiGet, apiPost, buildQuery } from './client'
+import { apiGet, apiPost, apiDelete, buildQuery } from './client'
 import { extractArray } from './mappers'
 
 export interface CreatePropertyPayload {
@@ -12,6 +12,7 @@ export interface CreatePropertyPayload {
   availableFrom?: string
   amenities?: string[]
   documentUrls?: string[]
+  imageUrls?: string[]
 }
 
 export interface PropertyRecord {
@@ -24,6 +25,15 @@ export interface PropertyRecord {
   verified?: boolean
   isVerified?: boolean
   createdAt?: string
+  // Add documents field to get the uploaded images
+  documents?: Array<{
+    id: string
+    status: string
+    fileKey: string
+  }>
+  // Property images (photos of the house)
+  Images?: string[]
+  images?: string[]
   [key: string]: unknown
 }
 
@@ -72,7 +82,11 @@ export async function getMyProperties(params: {
   State?: string
   City?: string
 } = {}): Promise<PropertyRecord[]> {
-  return apiGet(`/properties/mine${buildQuery(params)}`)
+  const payload = await apiGet<unknown>(`/properties/mine${buildQuery(params)}`)
+  console.log('[PROPERTY DEBUG] getMyProperties raw payload:', JSON.stringify(payload, null, 2))
+  const result = extractArray(payload) as PropertyRecord[]
+  console.log('[PROPERTY DEBUG] getMyProperties extracted:', JSON.stringify(result, null, 2))
+  return result
 }
 
 export async function getPropertyReviews(): Promise<PropertyReviewItem[]> {
@@ -94,4 +108,12 @@ export async function verifyDocument(propertyId: string, documentId: string): Pr
 
 export async function rejectDocument(propertyId: string, documentId: string, reason?: string): Promise<void> {
   return apiPost(`/properties/${propertyId}/documents/${documentId}/reject${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`)
+}
+
+export async function submitPropertyForReview(propertyId: string): Promise<void> {
+  return apiPost(`/properties/${propertyId}/submit-for-review`)
+}
+
+export async function deleteProperty(propertyId: string): Promise<void> {
+  return apiDelete(`/properties/${propertyId}`)
 }

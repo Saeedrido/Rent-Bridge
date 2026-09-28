@@ -43,13 +43,19 @@ export interface ListingRecord {
   state?: string
   area?: string
   createdAt?: string
+  coverImageKey?: string | null
+  CoverImageKey?: string | null
+  imageUrls?: string[]
+  ImageUrls?: string[]
   [key: string]: unknown
 }
 
 export interface ListingDetail extends ListingRecord {
   currency?: string
   coverImageKey?: string | null
+  CoverImageKey?: string | null
   imageUrls?: string[]
+  ImageUrls?: string[]
   publishedAt?: string
   listingType?: ListingTypeValue | number
   paymentPlan?: PaymentPlanValue | number
@@ -104,9 +110,14 @@ export async function searchListings(params: {
   Mine?: boolean
 } = {}): Promise<ListingRecord[]> {
   const payload = await apiGet<unknown>(`/listings/search${buildQuery(params)}`)
-  return extractArray(payload) as ListingRecord[]
+  console.log('[LISTING DEBUG] searchListings raw payload:', JSON.stringify(payload, null, 2))
+  const result = extractArray(payload) as ListingRecord[]
+  console.log('[LISTING DEBUG] searchListings extracted:', JSON.stringify(result, null, 2))
+  return result
 }
 
 export async function getListing(listingId: string): Promise<ListingDetail> {
-  return apiGet<ListingDetail>(`/listings/${listingId}`)
+  const result = await apiGet<ListingDetail>(`/listings/${listingId}`)
+  console.log('[LISTING DEBUG] getListing result:', JSON.stringify(result, null, 2))
+  return result
 }

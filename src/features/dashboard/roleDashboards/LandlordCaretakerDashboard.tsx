@@ -12,6 +12,7 @@ import {
   DataErrorBanner,
   useToast,
 } from './shared'
+import { Button, DashboardPropertyCardSkeleton } from '../../../components/ui'
 import {
   ManagedProperty,
   InspectionRequest,
@@ -19,7 +20,7 @@ import {
   PaymentRecord,
 } from './data'
 import { naira } from './data'
-import { getMyProperties, type PropertyRecord } from '../../../services/api/propertyApi'
+import { getMyProperties, type PropertyRecord, submitPropertyForReview, deleteProperty } from '../../../services/api/propertyApi'
 import {
   searchListings,
   unpublishListing,
@@ -33,6 +34,7 @@ import {
   listCallerLeases,
   confirmInspection,
   declineInspection,
+  beginInspection,
   moveToLegalReview,
   getLeaseAgreementPdf,
 } from '../../../services/api/leaseApi'
@@ -73,6 +75,8 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [properties, setProperties] = useState<ManagedProperty[]>([])
+  const [propertiesLoading, setPropertiesLoading] = useState(true)
+  const [submittingReview, setSubmittingReview] = useState(false)
   const [inspections, setInspections] = useState<InspectionRequest[]>([])
   const [agreements, setAgreements] = useState<AgreementRecord[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
@@ -98,6 +102,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
 
   useEffect(() => {
     let active = true
+    setPropertiesLoading(true)
     ;(async () => {
       try {
         const [mine, listings] = await Promise.all([
@@ -105,17 +110,20 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
           searchListings({ Page: 1, PageSize: 50, Mine: true }),
         ])
         if (!active) return
-        const byProperty = new Map((mine ?? []).map((p) => [p.id, p]))
-        const records = (listings ?? [])
-          .filter((l) => byProperty.has(l.propertyId as string))
-          .map((l): ManagedProperty => {
-            const prop = byProperty.get(String(l.propertyId))
-            return propertyFromListing(l, prop)
-          })
+        
+        const byListing = new Map((listings ?? []).map((l) => [l.propertyId, l]))
+        
+        // Show ALL properties (including drafts without listings)
+        const records = (mine ?? []).map((p): ManagedProperty => {
+          const listing = byListing.get(p.id)
+          return propertyFromListing(listing, p)
+        })
         setProperties(records)
       } catch (err) {
         const message = apiErrorMessage(err)
         if (active && message) setLoadError(message)
+      } finally {
+        if (active) setPropertiesLoading(false)
       }
     })()
     return () => {
@@ -205,17 +213,20 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
     const current = properties.find((p) => p.id === id)
     if (!current) return
     const isRemote = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(id)
+    const listingId = current.listingId
+    if (!listingId) return
     try {
       if (isRemote) {
-        if (current.published) await unpublishListing(id)
-        else await publishListing(id)
+        if (current.published) await unpublishListing(listingId)
+        else await publishListing(listingId)
       }
       setProperties((prev) =>
         prev.map((p) => (p.id === id ? { ...p, published: !p.published } : p)),
       )
       show('Listing updated')
-    } catch {
-      show('Could not update this listing right now.')
+    } catch (err) {
+      const message = apiErrorMessage(err)
+      show(message || 'Could not update this listing right now.')
     }
   }
 
@@ -225,12 +236,32 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   }
 
   const handleAcceptInspection = async (id: string) => {
+    console.log('[DEBUG LANDLORD] Accept inspection clicked for:', id)
     if (isUuid(id)) {
       try {
+        console.log('[DEBUG LANDLORD] Calling confirmInspection')
         await confirmInspection(id)
-      } catch {
-        show('Could not confirm this inspection right now.')
-        return
+        console.log('[DEBUG LANDLORD] confirmInspection succeeded')
+      } catch (err) {
+        const message = apiErrorMessage(err)
+        console.log('[DEBUG LANDLORD] confirmInspection error:', message, err)
+        if (message?.includes('No pending inspection')) {
+          console.log('[DEBUG LANDLORD] No pending inspection, trying beginInspection')
+          try {
+            await beginInspection(id)
+            console.log('[DEBUG LANDLORD] beginInspection succeeded, retrying confirmInspection')
+            await confirmInspection(id)
+            console.log('[DEBUG LANDLORD] confirmInspection retry succeeded')
+          } catch (beginErr) {
+            const beginMessage = apiErrorMessage(beginErr)
+            console.log('[DEBUG LANDLORD] beginInspection error:', beginMessage, beginErr)
+            show(beginMessage || 'Could not start inspection flow.')
+            return
+          }
+        } else {
+          show(message || 'Could not confirm this inspection right now.')
+          return
+        }
       }
     }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
@@ -238,12 +269,32 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   }
 
   const handleDeclineInspection = async (id: string) => {
+    console.log('[DEBUG LANDLORD] Decline inspection clicked for:', id)
     if (isUuid(id)) {
       try {
+        console.log('[DEBUG LANDLORD] Calling declineInspection')
         await declineInspection(id)
-      } catch {
-        show('Could not decline this inspection right now.')
-        return
+        console.log('[DEBUG LANDLORD] declineInspection succeeded')
+      } catch (err) {
+        const message = apiErrorMessage(err)
+        console.log('[DEBUG LANDLORD] declineInspection error:', message, err)
+        if (message?.includes('No pending inspection')) {
+          console.log('[DEBUG LANDLORD] No pending inspection, trying beginInspection')
+          try {
+            await beginInspection(id)
+            console.log('[DEBUG LANDLORD] beginInspection succeeded, retrying declineInspection')
+            await declineInspection(id)
+            console.log('[DEBUG LANDLORD] declineInspection retry succeeded')
+          } catch (beginErr) {
+            const beginMessage = apiErrorMessage(beginErr)
+            console.log('[DEBUG LANDLORD] beginInspection error:', beginMessage, beginErr)
+            show(beginMessage || 'Could not start inspection flow.')
+            return
+          }
+        } else {
+          show(message || 'Could not decline this inspection right now.')
+          return
+        }
       }
     }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'declined' as const } : i)))
@@ -254,8 +305,9 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
     if (isUuid(id)) {
       try {
         await moveToLegalReview(id)
-      } catch {
-        show('Could not send this agreement right now.')
+      } catch (err) {
+        const message = apiErrorMessage(err)
+        show(message || 'Could not send this agreement right now.')
         return
       }
     }
@@ -273,12 +325,86 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
         window.open(url, '_blank')
         window.setTimeout(() => URL.revokeObjectURL(url), 60000)
         return
-      } catch {
-        show('Could not download the agreement PDF right now.')
+      } catch (err) {
+        const message = apiErrorMessage(err)
+        show(message || 'Could not download the agreement PDF right now.')
         return
       }
     }
     show('Agreement PDF downloaded')
+  }
+
+  const renderActionButtons = (prop: ManagedProperty, canSubmitForReview: boolean) => {
+    if (canSubmitForReview) {
+      return (
+        <button
+          type="button"
+          disabled={submittingReview}
+          onClick={async () => {
+            try {
+              setSubmittingReview(true)
+              const propertyId = prop.id
+              await submitPropertyForReview(propertyId)
+              show('Property submitted for legal review. A lawyer will be assigned shortly.')
+              const [mine, listings] = await Promise.all([
+                getMyProperties({ Page: 1, PageSize: 50 }),
+                searchListings({ Page: 1, PageSize: 50, Mine: true }),
+              ])
+              const byProperty = new Map((mine ?? []).map((p) => [p.id, p]))
+              const records = (listings ?? [])
+                .filter((l) => byProperty.has(l.propertyId as string))
+                .map((l) => propertyFromListing(l, byProperty.get(String(l.propertyId))))
+              setProperties(records)
+            } catch (err) {
+              const message = apiErrorMessage(err)
+              if (message) show(message)
+              else show('An unexpected error occurred. Please try again.')
+            } finally {
+              setSubmittingReview(false)
+            }
+          }}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submittingReview ? 'Submitting…' : 'Submit for Review'}
+        </button>
+      )
+    }
+    if (prop.published) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setUnpublishConfirm(prop.id)
+          }}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+        >
+          Unpublish
+        </button>
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            const listingId = prop.listingId
+            if (!listingId) return
+            await publishListing(listingId)
+            setProperties((prev) =>
+              prev.map((p) => (p.id === prop.id ? { ...p, published: true } : p)),
+            )
+            show('Listing published successfully')
+          } catch (err) {
+            const message = apiErrorMessage(err)
+            show(message || 'Could not publish this listing right now.')
+          }
+        }}
+        className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark"
+      >
+        Publish
+      </button>
+    )
   }
 
   const renderContent = () => {
@@ -290,16 +416,27 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
               title="My properties"
               subtitle={`${properties.length} properties \u00B7 ${publishedCount} published`}
               action={
-                <button
-                  type="button"
-                  onClick={() => navigate(role === 'landlord' ? '/dashboard/landlord/publish' : '/dashboard/caretaker/publish')}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
-                >
-                  + Publish another apartment
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft mr-3"
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(role === 'landlord' ? '/dashboard/landlord/publish' : '/dashboard/caretaker/publish')}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
+                  >
+                    + Publish another apartment
+                  </button>
+                </>
               }
             />
-            {properties.length === 0 ? (
+            {propertiesLoading ? (
+              <DashboardPropertyCardSkeleton count={4} />
+            ) : properties.length === 0 ? (
               <div className="mt-8">
                 <EmptyState
                   icon={<HomeIcon className="text-2xl" />}
@@ -309,58 +446,85 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
               </div>
             ) : (
               <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {properties.map((prop, i) => (
-                  <article
-                    key={prop.id}
-                    className="anim-rise group flex flex-col overflow-hidden rounded-xl border border-sage bg-white transition-shadow hover:shadow-md"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                  >
-                    <div className="relative flex-shrink-0">
-                      <img
-                        src={prop.image}
-                        alt={prop.title}
-                        className="aspect-[16/10] w-full object-cover"
-                      />
-                      <StatusPill
-                        tone={prop.published ? 'published' : 'unpublished'}
-                        className="absolute bottom-3 right-3"
-                      >
-                        {prop.published ? 'PUBLISHED' : 'UNPUBLISHED'}
-                      </StatusPill>
-                    </div>
-                    <div className="flex flex-col flex-1 p-6">
-                      <p className="text-sm text-mist">{prop.location}</p>
-                      <h3 className="mt-1 font-serif text-[22px] font-semibold leading-snug text-forest group-hover:underline">
-                        {prop.title}
-                      </h3>
-                      <div className="mt-2 flex items-baseline gap-1">
-                        <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
-                        <span className="text-sm text-mist">/ year</span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist">
-                        <span className="capitalize">{prop.typeLabel}</span>
-                        {prop.beds > 0 && <span>· {prop.beds} bed</span>}
-                        {prop.baths > 0 && <span>· {prop.baths} bath</span>}
-                      </div>
-                      <div className="my-5 border-t border-sage-line" />
-                      <div className="mt-auto flex items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setUnpublishConfirm(prop.id)
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                {properties.map((prop, i) => {
+                  const isDraft = !prop.published;
+                  const canSubmitForReview = isDraft && !prop.verified && verifiedLabel.includes('Verified');
+                  
+                  return (
+                    <article
+                      key={prop.id}
+                      className="anim-rise group flex flex-col overflow-hidden rounded-xl border border-sage bg-white transition-shadow hover:shadow-md"
+                      style={{ animationDelay: `${i * 60}ms` }}
+                    >
+                      <div className="relative flex-shrink-0">
+                        <img
+                          src={prop.image}
+                          alt={prop.title}
+                          className="aspect-[16/10] w-full object-cover"
+                        />
+                        <StatusPill
+                          tone={
+                            prop.verified ? 'published' :
+                            canSubmitForReview ? 'inreview' :
+                            isDraft ? 'draft' : 'unpublished'
+                          }
+                          className="absolute bottom-3 right-3"
                         >
-                          {prop.published ? 'Unpublish' : 'Publish'}
-                        </button>
-                        <span className="text-sm text-mist shrink-0">
-                          {inspections.filter((ir) => ir.propertyId === prop.id).length} inspection requests
-                        </span>
+                          {prop.verified ? 'VERIFIED' : canSubmitForReview ? 'READY FOR REVIEW' : isDraft ? 'DRAFT' : 'UNPUBLISHED'}
+                        </StatusPill>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                      <div className="flex flex-col flex-1 p-6">
+                        <p className="text-sm text-mist">{prop.location}</p>
+                        <h3 className="mt-1 font-serif text-[22px] font-semibold leading-snug text-forest group-hover:underline">
+                          {prop.title}
+                        </h3>
+                        <div className="mt-2 flex items-baseline gap-1">
+                          <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
+                          <span className="text-sm text-mist">/ year</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist">
+                          <span className="capitalize">{prop.typeLabel}</span>
+                          {prop.beds > 0 && <span>· {prop.beds} bed</span>}
+                          {prop.baths > 0 && <span>· {prop.baths} bath</span>}
+                        </div>
+                        <div className="my-5 border-t border-sage-line" />
+                        <div className="mt-auto flex items-center justify-between gap-3">
+              {renderActionButtons(prop, canSubmitForReview)}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const confirmed = window.confirm('Are you sure you want to delete this property? This will also delete all associated images and documents from Cloudinary. This action cannot be undone.');
+                              if (!confirmed) return;
+                              try {
+                                await deleteProperty(prop.id);
+                                show('Property and associated files deleted successfully.');
+                                // Refresh properties
+                                const [mine, listings] = await Promise.all([
+                                  getMyProperties({ Page: 1, PageSize: 50 }),
+                                  searchListings({ Page: 1, PageSize: 50, Mine: true }),
+                                ]);
+                                const byProperty = new Map((mine ?? []).map((p) => [p.id, p]));
+                                const records = (listings ?? [])
+                                  .filter((l) => byProperty.has(l.propertyId as string))
+                                  .map((l) => propertyFromListing(l, byProperty.get(String(l.propertyId))));
+                                setProperties(records);
+                              } catch (err) {
+                                const message = apiErrorMessage(err);
+                                if (message) show(message);
+                              }
+                            }}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                          <span className="text-sm text-mist shrink-0">
+                            {inspections.filter((ir) => ir.propertyId === prop.id).length} inspection requests
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
               </div>
             )}
 
@@ -395,6 +559,14 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
             <PageHeading
               title="Inspection requests"
               subtitle={`${inspections.filter((i) => i.status === 'pending').length} awaiting your response`}
+              action={
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </Button>
+              }
             />
             <div className="mt-8 space-y-3">
               {inspections.length === 0 ? (
@@ -598,26 +770,45 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   )
 }
 
-function propertyFromListing(l: ListingRecord, prop: PropertyRecord | undefined): ManagedProperty {
-  const status = Number(l.status)
+function propertyFromListing(l: ListingRecord | undefined, prop: PropertyRecord | undefined): ManagedProperty {
+  const rawStatus = l?.status as unknown
+  const status = typeof rawStatus === 'number' ? rawStatus : 
+    typeof rawStatus === 'string' 
+      ? (rawStatus.toLowerCase() === 'published' ? 1 : rawStatus.toLowerCase() === 'draft' ? 0 : rawStatus.toLowerCase() === 'unpublished' ? 2 : rawStatus.toLowerCase() === 'closed' ? 3 : 0)
+      : 0
   const propType = (prop?.propertyType as string) || 'Property'
   const beds = num(prop?.bedrooms ?? prop?.beds)
   const baths = num(prop?.bathrooms ?? prop?.baths)
+  const street = prop?.street ?? ''
+  const city = prop?.city ?? ''
+  const area = prop?.area ?? ''
+  const state = prop?.state ?? ''
+  const location = [street, area, city, state].filter(Boolean).join(', ')
+  const title = propType || 'Untitled property'
+  const rent = num(l?.priceAmount ?? prop?.price)
+  // Use property images first, then listing images, then fallback
+  const propImages = prop?.Images ?? prop?.images ?? []
+  const listingImages = l?.ImageUrls ?? l?.imageUrls ?? []
+  const listingCover = l?.CoverImageKey ?? l?.coverImageKey
+  const image = propImages[0] ?? listingImages[0] ?? listingCover ?? '/home1.jpg'
+  
+  console.log('[DASHBOARD DEBUG] prop:', prop ? { Images: prop.Images, images: prop.images, documents: prop.documents } : 'undefined')
+  console.log('[DASHBOARD DEBUG] listing:', l ? { coverImageKey: l.coverImageKey, CoverImageKey: l.CoverImageKey, imageUrls: l.imageUrls, ImageUrls: l.ImageUrls } : 'undefined')
+  console.log('[DASHBOARD DEBUG] Selected image:', image)
+  
   return {
-    id: l.id ?? String(l.propertyId),
-    title: l.title ?? (prop?.title as string) ?? 'Untitled listing',
-    location:
-      (prop?.location as string) ||
-      [(prop?.area as string), (prop?.city as string), (prop?.state as string)].filter(Boolean).join(', ') ||
-      (prop?.street as string) ||
-      '',
-    rent: num(l.priceAmount ?? prop?.price),
+    id: String(prop?.id) ?? '',
+    listingId: l?.id,
+    title,
+    location,
+    rent,
     beds,
     baths,
     typeLabel: propType,
-    image: (prop?.coverImage as string) ?? (prop?.images as string[] | undefined)?.[0] ?? '/home1.jpg',
-    published: status === ListingStatus.Published,
-    description: (l.description as string) || (prop?.description as string) || '',
+    image,
+    published: l ? status === ListingStatus.Published : false,
+    verified: prop?.verified ?? prop?.isVerified ?? false,
+    description: (l?.description as string) || (prop?.description as string) || '',
   }
 }
 

@@ -1,15 +1,22 @@
 import type { DashboardProperty } from '../data/dashboardProperties'
 import { PropertyCard } from './PropertyCard'
+import { DashboardPropertyCardSkeleton } from '../../../components/ui'
 
 export function PropertyGrid({ 
   properties, 
   savedProperties = [],
-  onToggleSave
+  onToggleSave,
+  loading = false
 }: { 
   properties: DashboardProperty[]
   savedProperties?: string[]
   onToggleSave?: (id: string) => void
+  loading?: boolean
 }) {
+  if (loading) {
+    return <DashboardPropertyCardSkeleton count={6} />
+  }
+
   if (properties.length === 0) {
     return (
       <div className="rounded-card border border-green/15 bg-white p-10 text-center text-ink/60">

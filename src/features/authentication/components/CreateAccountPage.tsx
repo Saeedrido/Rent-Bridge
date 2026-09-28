@@ -5,7 +5,7 @@ import { ProgressIndicator } from './ProgressIndicator'
 import { ROLES } from './roles'
 import { getOnboarding } from '../onboardingStore'
 import { registerUser } from '../../../services/api/authApi'
-import { ApiError } from '../../../services/api/client'
+import { apiErrorMessage } from '../../../services/api/fallback'
 import { roleDashboardPath } from '../../../utils/roles'
 import type { BackendRole } from '../../../services/api/tokens'
 
@@ -56,7 +56,7 @@ export function CreateAccountPage() {
       })
       navigate(roleDashboardPath(roleId))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Unable to create your account. Please try again.')
+      setError(apiErrorMessage(err) || 'Unable to create your account. Please try again.')
     } finally {
       setSubmitting(false)
     }

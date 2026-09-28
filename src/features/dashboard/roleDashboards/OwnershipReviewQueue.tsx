@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PageHeading, StatusPill, EmptyState, DataErrorBanner, useToast } from './shared'
-import { ApiError } from '../../../services/api/client'
+import { apiErrorMessage } from '../../../services/api/fallback'
 import {
   getPropertyReviews,
   startDocumentReview,
@@ -9,6 +9,7 @@ import {
   verifyProperty,
   type PropertyReviewItem,
 } from '../../../services/api/propertyApi'
+
 
 type QueueRole = 'lawyer' | 'admin'
 
@@ -37,6 +38,8 @@ function statusLabel(status: string): string {
   if (/reject/i.test(status)) return 'Rejected'
   return status
 }
+
+
 
 interface ReviewRecord {
   property: PropertyReviewItem
@@ -81,7 +84,7 @@ export function OwnershipReviewQueue({ role }: { role: QueueRole }) {
         setRecords((rows ?? []).map(toRecord))
       })
       .catch((err) => {
-        if (active) setLoadError(err instanceof Error ? err.message : 'Could not load ownership reviews right now.')
+        if (active) setLoadError(apiErrorMessage(err) || 'Could not load ownership reviews right now.')
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -102,7 +105,7 @@ export function OwnershipReviewQueue({ role }: { role: QueueRole }) {
       if (successMessage) show(successMessage)
       return true
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not update this review right now.')
+      show(apiErrorMessage(err) || 'Could not update this review right now.')
       return false
     } finally {
       setBusy(null)
@@ -288,6 +291,18 @@ function ReviewCard({
         <ul className="divide-y divide-sage-line">
           {record.documents.map((doc, index) => {
             const isRejecting = rejectTarget?.propertyId === property.propertyId && rejectTarget.documentId === doc.documentId
+            console.log('[DOC DEBUG] Document:', { documentId: doc.documentId, fileKey: doc.fileKey, status: doc.status })
+            
+            const handleViewDocument = (e: React.MouseEvent) => {
+              e.preventDefault()
+              if (!doc.fileKey) return
+              // Use regular URL for documents with access_mode: public (new uploads)
+              // Add cache buster to bypass CDN cache
+              const url = doc.fileKey + (doc.fileKey.includes('?') ? '&' : '?') + 't=' + Date.now()
+              console.log('[DOC DEBUG] Opening document:', url)
+              window.open(url, '_blank', 'noopener,noreferrer')
+            }
+            
             return (
               <li key={doc.documentId} className="px-5 py-4">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -300,9 +315,8 @@ function ReviewCard({
                         Document {index + 1}
                         {doc.fileKey && (
                           <a
-                            href={doc.fileKey}
-                            target="_blank"
-                            rel="noreferrer"
+                            href="#"
+                            onClick={handleViewDocument}
                             className="ml-2 font-normal text-forest hover:underline"
                           >
                             View

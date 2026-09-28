@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Container } from '../../components/layout'
 import { Seo, PropertyCard, Breadcrumbs } from '../../components/common'
-import { Spinner, EmptyState } from '../../components/ui'
+import { EmptyState, PropertyDetailSkeleton } from '../../components/ui'
 import { DataErrorBanner } from '../../features/dashboard/roleDashboards/shared'
 import { useProperty } from '../../features/properties/hooks/useProperty'
 import { propertyService } from '../../features/properties/services/propertyService'
@@ -34,11 +34,7 @@ export default function PropertyDetailsPage() {
   }, [property?.id])
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
+    return <PropertyDetailSkeleton />
   }
 
   if (!property) {

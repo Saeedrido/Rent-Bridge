@@ -6,6 +6,7 @@ import { currentRoleId, roleDashboardPath } from '../../../utils/roles'
 import { verifyKyc, getKycStatus, type KycStatusValue } from '../../../services/api/kycApi'
 import { ApiError } from '../../../services/api/client'
 import { cn } from '../../../utils/cn'
+import { getUser } from '../../../services/api/tokens'
 
 declare global {
   interface Window {
@@ -73,6 +74,7 @@ export function KycVerificationPage() {
   const navigate = useNavigate()
   const roleId = currentRoleId()
   const role = ROLES.find((r) => r.id === roleId) ?? ROLES[0]
+  const user = getUser()
 
   const [nin, setNin] = useState('')
   const [stage, setStage] = useState<Stage>('idle')
@@ -83,6 +85,7 @@ export function KycVerificationPage() {
   const pollTimerRef = useRef<number | null>(null)
   const stageRef = useRef<Stage>('idle')
   const mountedRef = useRef(true)
+  const checkedInitialStatusRef = useRef(false)
 
   useEffect(() => {
     mountedRef.current = true
@@ -91,6 +94,54 @@ export function KycVerificationPage() {
       if (pollTimerRef.current !== null) window.clearTimeout(pollTimerRef.current)
     }
   }, [])
+
+  // Check initial KYC status on mount
+  useEffect(() => {
+    if (checkedInitialStatusRef.current) return
+    checkedInitialStatusRef.current = true
+    
+    let active = true
+    ;(async () => {
+      try {
+        // If user is already verified via auth, redirect to dashboard
+        const isVerified = user?.verified === true
+        if (isVerified) {
+          if (mountedRef.current) {
+            navigate(roleDashboardPath(roleId))
+          }
+          return
+        }
+
+        const status = await getKycStatus()
+        
+        if (!active || !mountedRef.current) return
+        
+        if (status?.status === 'verified') {
+          setStageSafe('verified')
+          return
+        }
+        if (status?.status === 'rejected') {
+          setStageSafe('rejected')
+          return
+        }
+        if (status?.status === 'pending') {
+          // Verification is in progress - user can continue
+          setNote('You have a pending verification. You can continue from where you left off.')
+          setStageSafe('widget')
+          return
+        }
+        // status === 'none' - start fresh
+        setStageSafe('idle')
+      } catch (err) {
+        if (active && mountedRef.current) {
+          setStageSafe('idle')
+        }
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [roleId, user?.verified])
 
   const setStageSafe = useCallback((next: Stage) => {
     stageRef.current = next
@@ -183,13 +234,18 @@ export function KycVerificationPage() {
       setStageSafe('widget')
     } catch (err) {
       setStageSafe('idle')
-      setError(
-        err instanceof ApiError
+      const errorMessage = err instanceof ApiError
+        ? err.message
+        : err instanceof Error
           ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Unable to start verification. Please try again.',
-      )
+          : 'Unable to start verification. Please try again.'
+      setError(errorMessage)
+      
+      // If verification is already pending, guide user to continue
+      if (errorMessage.includes('already pending') || errorMessage.includes('pending')) {
+        setNote('A verification is already in progress. You can continue from where you left off.')
+        setStageSafe('widget')
+      }
     }
   }
 

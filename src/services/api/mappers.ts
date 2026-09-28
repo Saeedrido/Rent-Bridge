@@ -114,9 +114,18 @@ function readLocationLabel(item: Row): string {
 }
 
 function readImages(item: Row, id: string): PropertyImage[] {
-  const cover = resolveCoverImage(item.coverImageKey ?? item.coverImage ?? item.image, id)
-  const rawImages = arrayValue(item.images)
-  const imageUrls = arrayValue(item.imageUrls).map(text).filter(Boolean)
+  console.log('[IMAGE DEBUG] Raw item keys:', Object.keys(item))
+  console.log('[IMAGE DEBUG] coverImageKey:', item.coverImageKey, 'CoverImageKey:', item.CoverImageKey)
+  console.log('[IMAGE DEBUG] imageUrls:', item.imageUrls, 'ImageUrls:', item.ImageUrls)
+  console.log('[IMAGE DEBUG] images:', item.images, 'Images:', item.Images)
+  
+  const cover = resolveCoverImage(item.coverImageKey ?? item.CoverImageKey ?? item.coverImage ?? item.image, id)
+  const rawImages = arrayValue(item.images ?? item.Images)
+  const imageUrls = arrayValue(item.imageUrls ?? item.ImageUrls).map(text).filter(Boolean)
+  
+  console.log('[IMAGE DEBUG] Resolved cover:', cover)
+  console.log('[IMAGE DEBUG] rawImages:', rawImages)
+  console.log('[IMAGE DEBUG] imageUrls:', imageUrls)
   const images = rawImages
     .map((entry, index) => {
       const row = asRow(entry)

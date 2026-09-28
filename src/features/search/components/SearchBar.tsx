@@ -4,7 +4,11 @@ import type { ListingType } from '../../properties/types/property'
 import { Input, Button } from '../../../components/ui'
 import { cn } from '../../../utils/cn'
 
-export function SearchBar() {
+interface SearchBarProps {
+  className?: string
+}
+
+export function SearchBar({ className }: SearchBarProps) {
   const navigate = useNavigate()
   const [type, setType] = useState<ListingType>('rent')
   const [location, setLocation] = useState('')
@@ -15,7 +19,7 @@ export function SearchBar() {
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto w-full max-w-2xl">
+    <form onSubmit={submit} className={cn("mx-auto w-full max-w-2xl", className)}>
       <div className="flex flex-col gap-3 rounded-lg bg-white p-3 shadow-[0_22px_40px_-30px_rgba(18,74,40,.5)] border border-green/15 sm:flex-row sm:items-center">
         <div className="flex rounded-md border border-green/15 p-1">
           {(['rent', 'buy'] as ListingType[]).map((t) => (

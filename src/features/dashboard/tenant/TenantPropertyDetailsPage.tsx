@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { Seo } from '../../../components/common'
-import { Spinner } from '../../../components/ui'
+import { PropertyGallerySkeleton } from '../../../components/ui'
 import type { DashboardProperty } from '../../../features/dashboard/data/dashboardProperties'
 import { propertyService } from '../../../features/properties/services/propertyService'
 import { propertyToDashboardProperty, isUuid, formatDate } from '../../../services/api/mappers'
@@ -109,21 +109,54 @@ const featuredRef = useRef<HTMLDivElement>(null)
 
   const saved = id ? isFavorite(id) : false
 
+  const inspectingRef = useRef(false)
+
   const handleRequestInspection = async () => {
-    if (!id) return
+    if (!id || inspectingRef.current) return
+    inspectingRef.current = true
     setInspecting(true)
     try {
+      console.log('[DEBUG] Creating lease for listing:', id)
       const lease = await createLease({ listingId: id })
-      await requestInspection(lease.id, {
-        preferredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        note: 'Tenant requested an inspection from the listing page.',
-      })
+      console.log('[DEBUG] Lease created:', lease.id)
+      
+      let inspectionRequested = false
+      let lastError: Error | null = null
+      
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          console.log('[DEBUG] Requesting inspection, attempt:', attempt + 1)
+          await requestInspection(lease.id, {
+            preferredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            note: 'Tenant requested an inspection from the listing page.',
+          })
+          console.log('[DEBUG] Inspection requested successfully')
+          inspectionRequested = true
+          break
+        } catch (err) {
+          lastError = err as Error
+          const message = apiErrorMessage(err)
+          console.log('[DEBUG] Request inspection error:', message, err)
+          if (message?.includes('modified by another process')) {
+            await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)))
+            continue
+          }
+          throw err
+        }
+      }
+      
+      if (!inspectionRequested) {
+        throw lastError || new Error('Failed to request inspection after retries')
+      }
+      
       show('Inspection requested — check the Inspections tab')
       navigate('/dashboard/inspections')
     } catch (err) {
+      console.error('[DEBUG] Final error:', err)
       show(apiErrorMessage(err) || 'Could not request inspection right now.')
     } finally {
       setInspecting(false)
+      inspectingRef.current = false
     }
   }
 
@@ -213,11 +246,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner className="h-8 w-8" />
-      </div>
-    )
+    return <PropertyGallerySkeleton />
   }
 
   if (!property) {

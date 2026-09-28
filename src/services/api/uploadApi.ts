@@ -13,6 +13,7 @@ export async function uploadFile(file: File): Promise<string> {
   form.append('file', file)
 
   const token = getAccessToken()
+  console.log('[UPLOAD DEBUG] Uploading file:', file.name, 'type:', file.type, 'size:', file.size)
   let response = await fetch(url, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -42,7 +43,9 @@ export async function uploadFile(file: File): Promise<string> {
   }
 
   const data = (await response.json()) as Record<string, unknown>
+  console.log('[UPLOAD DEBUG] Upload response:', data)
   const hosted = (data.url ?? data.secure_url) as string | undefined
+  console.log('[UPLOAD DEBUG] Hosted URL:', hosted)
   if (!hosted) throw new ApiError('Upload returned no URL.')
   return hosted
 }

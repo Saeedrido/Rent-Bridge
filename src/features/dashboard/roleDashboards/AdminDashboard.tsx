@@ -16,7 +16,6 @@ import {
 import { naira } from './data'
 import { getUser } from '../../../services/api/tokens'
 import { refreshProfile } from '../../../services/api/authApi'
-import { ApiError } from '../../../services/api/client'
 import { apiErrorMessage } from '../../../services/api/fallback'
 import {
   extractArray,
@@ -179,7 +178,7 @@ export function AdminDashboard() {
       else await suspendLawyer(id)
       apply()
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not update this lawyer right now.')
+      show(apiErrorMessage(err) || 'Could not update this lawyer right now.')
     }
   }
 
@@ -198,7 +197,7 @@ export function AdminDashboard() {
       else await unpublishListing(id)
       apply()
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not update this listing right now.')
+      show(apiErrorMessage(err) || 'Could not update this listing right now.')
     }
   }
 
@@ -212,7 +211,7 @@ export function AdminDashboard() {
       setFeesDirty(false)
       show('Fee settings saved')
     } catch (err) {
-      show(err instanceof ApiError ? err.message : 'Could not save fee settings right now.')
+      show(apiErrorMessage(err) || 'Could not save fee settings right now.')
     }
   }
 
@@ -468,6 +467,13 @@ export function AdminDashboard() {
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+            >
+              Refresh
+            </button>
           </div>
         }
       />

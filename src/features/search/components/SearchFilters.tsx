@@ -10,17 +10,18 @@ interface Props {
   toggleAmenity: (amenity: string) => void
   reset: () => void
   total: number
+  disabled?: boolean
 }
 
 const bedsOptions = [1, 2, 3, 4, 5]
 const bathsOptions = [1, 2, 3, 4, 5]
 
-export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, total }: Props) {
+export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, total, disabled = false }: Props) {
   return (
     <aside className="rounded-card border border-green/15 bg-white p-5 lg:sticky lg:top-24">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-serif text-lg font-semibold text-green-dark">Filters</h2>
-        <button onClick={reset} className="text-sm font-medium text-orange hover:underline">
+        <button onClick={reset} disabled={disabled} className="text-sm font-medium text-orange hover:underline disabled:opacity-50 disabled:cursor-not-allowed">
           Reset
         </button>
       </div>
@@ -31,6 +32,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
             value={filters.query}
             onChange={(e) => updateFilter('query', e.target.value)}
             placeholder="Title or area"
+            disabled={disabled}
           />
         </Field>
 
@@ -38,6 +40,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
           <Select
             value={filters.listingType}
             onChange={(e) => updateFilter('listingType', e.target.value as SearchFilters['listingType'])}
+            disabled={disabled}
           >
             <option value="all">All</option>
             <option value="rent">Rent</option>
@@ -49,6 +52,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
           <Select
             value={filters.propertyType}
             onChange={(e) => updateFilter('propertyType', e.target.value as PropertyType | 'all')}
+            disabled={disabled}
           >
             <option value="all">All types</option>
             {PROPERTY_TYPES.map((t) => (
@@ -64,6 +68,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
             value={filters.location}
             onChange={(e) => updateFilter('location', e.target.value)}
             placeholder="e.g. Yaba, Lagos"
+            disabled={disabled}
           />
         </Field>
 
@@ -74,6 +79,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
               value={filters.minPrice ?? ''}
               onChange={(e) => updateFilter('minPrice', e.target.value ? Number(e.target.value) : null)}
               placeholder="₦"
+              disabled={disabled}
             />
           </Field>
           <Field label="Max price">
@@ -82,6 +88,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
               value={filters.maxPrice ?? ''}
               onChange={(e) => updateFilter('maxPrice', e.target.value ? Number(e.target.value) : null)}
               placeholder="₦"
+              disabled={disabled}
             />
           </Field>
         </div>
@@ -91,6 +98,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
             <Select
               value={filters.beds ?? ''}
               onChange={(e) => updateFilter('beds', e.target.value ? Number(e.target.value) : null)}
+              disabled={disabled}
             >
               <option value="">Any</option>
               {bedsOptions.map((b) => (
@@ -104,6 +112,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
             <Select
               value={filters.baths ?? ''}
               onChange={(e) => updateFilter('baths', e.target.value ? Number(e.target.value) : null)}
+              disabled={disabled}
             >
               <option value="">Any</option>
               {bathsOptions.map((b) => (
@@ -116,7 +125,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
         </div>
 
         <Field label="Sort by">
-          <Select value={filters.sort} onChange={(e) => updateFilter('sort', e.target.value as SortOption)}>
+          <Select value={filters.sort} onChange={(e) => updateFilter('sort', e.target.value as SortOption)} disabled={disabled}>
             <option value="newest">Newest</option>
             <option value="price-asc">Price: low to high</option>
             <option value="price-desc">Price: high to low</option>
@@ -129,6 +138,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
             type="checkbox"
             checked={filters.verifiedOnly}
             onChange={(e) => updateFilter('verifiedOnly', e.target.checked)}
+            disabled={disabled}
             className="h-4 w-4 accent-orange"
           />
           Verified only
@@ -145,6 +155,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleAmenity(a)}
+                    disabled={disabled}
                     className="h-4 w-4 accent-orange"
                   />
                   {a}
@@ -155,7 +166,7 @@ export function SearchFilters({ filters, updateFilter, toggleAmenity, reset, tot
         </div>
 
         <p className="text-sm text-ink/60">{total} properties found</p>
-        <Button type="button" fullWidth onClick={reset}>
+        <Button type="button" fullWidth onClick={reset} disabled={disabled}>
           Clear all
         </Button>
       </div>
