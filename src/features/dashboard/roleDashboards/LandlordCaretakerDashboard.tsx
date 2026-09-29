@@ -33,6 +33,7 @@ import { refreshProfile } from '../../../services/api/authApi'
 import {
   listCallerLeases,
   confirmInspection,
+  completeInspection as completeInspectionRequest,
   declineInspection,
   beginInspection,
   moveToLegalReview,
@@ -55,6 +56,15 @@ const roleLabel = (role: 'landlord' | 'caretaker', verified: boolean) => {
 
 function notifTime(slot: string): string {
   return slot ? 'New' : 'Just now'
+}
+
+// YYYY-MM-DD in the user's own timezone — what <input type="date"> uses and
+// what the API expects for a calendar date (no time-of-day).
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caretaker' }) {
@@ -183,6 +193,10 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   }, [])
 
   const [unpublishConfirm, setUnpublishConfirm] = useState<string | null>(null)
+  // Booking an inspection and completing it both need a date, so both are
+  // collected in a small modal rather than fired from a bare button.
+  const [acceptInspection, setAcceptInspection] = useState<{ id: string; date: string; preferred?: string } | null>(null)
+  const [completeInspection, setCompleteInspection] = useState<{ id: string; date: string; scheduled?: string } | null>(null)
 
   const { show } = useToast()
 
@@ -238,22 +252,78 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
     setUnpublishConfirm(null)
   }
 
-  const handleAcceptInspection = async (id: string) => {
+  // A confirmation is a real booking, so it needs a date. The modal collects
+  // it; the server requires it.
+  const handleAcceptInspection = (id: string) => {
     if (!isUuid(id)) {
       show('This inspection is not linked to a lease yet.')
       return
     }
+    const current = inspections.find((i) => i.id === id)
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setAcceptInspection({ id, date: toDateInputValue(tomorrow), preferred: current?.slot })
+  }
+
+  const submitAcceptInspection = async () => {
+    const target = acceptInspection
+    if (!target) return
+    if (!target.date) {
+      show('Pick a date for the inspection.')
+      return
+    }
+    setAcceptInspection(null)
     try {
       // Confirm requires the lease to be in InspectionRequested, so open the
       // flow first. begin is idempotent server-side, so this is safe either way.
-      await beginInspection(id)
-      await confirmInspection(id)
+      await beginInspection(target.id)
+      await confirmInspection(target.id, { scheduledDate: target.date })
     } catch (err) {
       show(apiErrorMessage(err) || 'Could not confirm this inspection right now.')
       return
     }
-    setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
+    setInspections((prev) =>
+      prev.map((i) =>
+        i.id === target.id
+          ? { ...i, status: 'confirmed' as const, scheduledDate: target.date }
+          : i,
+      ),
+    )
     show('Inspection confirmed')
+  }
+
+  // Completion is a separate step: it is what actually releases escrow.
+  const handleCompleteInspection = (id: string) => {
+    if (!isUuid(id)) {
+      show('This inspection is not linked to a lease yet.')
+      return
+    }
+    const current = inspections.find((i) => i.id === id)
+    setCompleteInspection({ id, date: toDateInputValue(new Date()), scheduled: current?.scheduledDate })
+  }
+
+  const submitCompleteInspection = async () => {
+    const target = completeInspection
+    if (!target) return
+    if (!target.date) {
+      show('Pick the date the inspection took place.')
+      return
+    }
+    setCompleteInspection(null)
+    try {
+      await completeInspectionRequest(target.id, { actualDate: target.date })
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not complete this inspection right now.')
+      return
+    }
+    setInspections((prev) =>
+      prev.map((i) =>
+        i.id === target.id
+          ? { ...i, status: 'completed' as const, actualDate: target.date }
+          : i,
+      ),
+    )
+    show('Inspection completed')
   }
 
   const handleDeclineInspection = async (id: string) => {
@@ -568,7 +638,8 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                         <StatusPill
                           tone={
                             insp.status === 'pending' ? 'pending' :
-                            insp.status === 'confirmed' ? 'confirmed' : 'declined'
+                            insp.status === 'confirmed' ? 'confirmed' :
+                            insp.status === 'completed' ? 'completed' : 'declined'
                           }
                         >
                           {insp.status}
@@ -591,12 +662,107 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                             </button>
                           </>
                         )}
+                        {insp.status === 'confirmed' && (
+                          <button
+                            type="button"
+                            onClick={() => handleCompleteInspection(insp.id)}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90"
+                          >
+                            Mark complete
+                          </button>
+                        )}
                       </div>
                     </div>
                   )
                 })
               )}
             </div>
+
+            <DashboardModal
+              open={!!acceptInspection}
+              onClose={() => setAcceptInspection(null)}
+              title="Accept inspection"
+            >
+              <div className="space-y-2 text-sm text-[#374151]">
+                <p>Choose when the inspection will take place. The tenant is notified once you confirm.</p>
+                {acceptInspection?.preferred && (
+                  <p className="text-mist">Tenant asked for: {acceptInspection.preferred}</p>
+                )}
+              </div>
+              <label className="mt-4 block text-sm font-semibold text-ink" htmlFor="accept-inspection-date">
+                Scheduled date
+              </label>
+              <input
+                id="accept-inspection-date"
+                type="date"
+                value={acceptInspection?.date ?? ''}
+                min={toDateInputValue(new Date())}
+                onChange={(e) =>
+                  setAcceptInspection((prev) => (prev ? { ...prev, date: e.target.value } : prev))
+                }
+                className="mt-1.5 w-full rounded-lg border border-sage bg-white px-3 py-2.5 text-[15px] text-ink outline-none focus:border-forest"
+              />
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAcceptInspection(null)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitAcceptInspection()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
+                >
+                  Confirm
+                </button>
+              </div>
+            </DashboardModal>
+
+            <DashboardModal
+              open={!!completeInspection}
+              onClose={() => setCompleteInspection(null)}
+              title="Mark inspection complete"
+            >
+              <div className="space-y-2 text-sm text-[#374151]">
+                <p>Confirm the date the inspection actually took place.</p>
+                {completeInspection?.scheduled && (
+                  <p className="text-mist">Booked for {completeInspection.scheduled}</p>
+                )}
+                <p className="text-mist">Completing the inspection is what releases the escrow payment.</p>
+              </div>
+              <label className="mt-4 block text-sm font-semibold text-ink" htmlFor="complete-inspection-date">
+                Actual date
+              </label>
+              <input
+                id="complete-inspection-date"
+                type="date"
+                value={completeInspection?.date ?? ''}
+                min="2000-01-01"
+                max={toDateInputValue(new Date())}
+                onChange={(e) =>
+                  setCompleteInspection((prev) => (prev ? { ...prev, date: e.target.value } : prev))
+                }
+                className="mt-1.5 w-full rounded-lg border border-sage bg-white px-3 py-2.5 text-[15px] text-ink outline-none focus:border-forest"
+              />
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCompleteInspection(null)}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitCompleteInspection()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-forest/90"
+                >
+                  Mark complete
+                </button>
+              </div>
+            </DashboardModal>
           </>
         )
 

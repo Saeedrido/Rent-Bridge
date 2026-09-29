@@ -579,19 +579,27 @@ export function leaseToInspectionRequest(raw: unknown): InspectionRequest | null
   if (!inspectionStatus) return null
 
   const scheduled = text(inspection.scheduledDate ?? item.inspectionScheduledAt)
+  const actual = text(inspection.actualDate)
   const preferred = text(inspection.preferredDate ?? item.preferredInspectionDate)
-  const slot = scheduled
-    ? `${formatShortDate(scheduled)} · scheduled`
-    : preferred
-      ? `${formatShortDate(preferred)} · requested`
-      : 'Awaiting schedule'
+  const slot = actual
+    ? `${formatShortDate(actual)} · completed`
+    : scheduled
+      ? `${formatShortDate(scheduled)} · scheduled`
+      : preferred
+        ? `${formatShortDate(preferred)} · requested`
+        : 'Awaiting schedule'
 
+  // 'completed' stays distinct from 'confirmed': only a completed inspection
+  // has satisfied the escrow release gate, and the UI offers a different
+  // action for each.
   const status: InspectionRequest['status'] =
-    inspectionStatus === 'confirmed' || inspectionStatus === 'completed'
-      ? 'confirmed'
-      : inspectionStatus === 'pending' || inspectionStatus === 'reschedulepending'
-        ? 'pending'
-        : 'declined'
+    inspectionStatus === 'completed'
+      ? 'completed'
+      : inspectionStatus === 'confirmed'
+        ? 'confirmed'
+        : inspectionStatus === 'pending' || inspectionStatus === 'reschedulepending'
+          ? 'pending'
+          : 'declined'
 
   return {
     id: text(item.leaseId ?? item.id),
@@ -599,6 +607,8 @@ export function leaseToInspectionRequest(raw: unknown): InspectionRequest | null
     propertyId: text(item.listingId ?? listing.id),
     slot,
     status,
+    scheduledDate: scheduled || undefined,
+    actualDate: actual || undefined,
   }
 }
 
