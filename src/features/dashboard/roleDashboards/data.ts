@@ -18,7 +18,11 @@ export interface InspectionRequest {
   tenant: string
   propertyId: string
   slot: string
-  status: 'pending' | 'confirmed' | 'declined'
+  status: 'pending' | 'confirmed' | 'declined' | 'completed'
+  /** ISO date the inspection is booked for, when confirmed. */
+  scheduledDate?: string
+  /** ISO date the inspection actually happened, when completed. */
+  actualDate?: string
 }
 
 export interface AgreementRecord {

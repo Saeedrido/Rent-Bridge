@@ -11,7 +11,14 @@ export interface RequestInspectionPayload {
 }
 
 export interface ConfirmInspectionPayload {
-  scheduledDate?: string
+  /** Required — a confirmation without a booking date is rejected server-side. */
+  scheduledDate: string
+  notes?: string
+}
+
+export interface CompleteInspectionPayload {
+  /** When the inspection actually happened. Cannot be in the future. */
+  actualDate: string
   notes?: string
 }
 
@@ -60,8 +67,13 @@ export async function beginInspection(leaseId: string): Promise<void> {
   return apiPost(`/leases/${leaseId}/inspection/begin`)
 }
 
-export async function confirmInspection(leaseId: string, payload: ConfirmInspectionPayload = {}): Promise<void> {
+export async function confirmInspection(leaseId: string, payload: ConfirmInspectionPayload): Promise<void> {
   return apiPost(`/leases/${leaseId}/inspection/confirm`, payload)
+}
+
+/** Records that the inspection physically took place — this releases the escrow gate. */
+export async function completeInspection(leaseId: string, payload: CompleteInspectionPayload): Promise<void> {
+  return apiPost(`/leases/${leaseId}/inspection/complete`, payload)
 }
 
 export async function declineInspection(leaseId: string): Promise<void> {
