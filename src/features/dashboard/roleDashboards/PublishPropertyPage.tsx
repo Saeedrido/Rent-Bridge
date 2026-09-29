@@ -16,6 +16,7 @@ import { getUser } from '../../../services/api/tokens'
 import { refreshProfile } from '../../../services/api/authApi'
 import { listCallerLeases } from '../../../services/api/leaseApi'
 import { leaseToInspectionRequest } from '../../../services/api/mappers'
+import type { InspectionRequest } from './data'
 import { getPayoutAccount } from '../../../services/api/payoutApi'
 import { apiErrorMessage } from '../../../services/api/fallback'
 import { ExternalLinkIcon } from '../components/icons'
@@ -50,7 +51,7 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
         setNotifications(
           leases
             .map(leaseToInspectionRequest)
-            .filter((i) => i.status === 'pending')
+            .filter((i): i is InspectionRequest => i !== null && i.status === 'pending')
             .map((i) => ({
               id: `notif-${i.id}`,
               text: `${i.tenant} requested an inspection of your property.`,

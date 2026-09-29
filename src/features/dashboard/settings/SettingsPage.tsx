@@ -26,6 +26,7 @@ import { RoleDashboardShell, type NotificationItem } from '../roleDashboards/Rol
 import { PayoutAccountSection } from '../roleDashboards/PayoutAccountSection'
 import { listCallerLeases } from '../../../services/api/leaseApi'
 import { leaseToInspectionRequest } from '../../../services/api/mappers'
+import type { InspectionRequest } from '../roleDashboards/data'
 import { refreshProfile, logoutUser } from '../../../services/api/authApi'
 
 export type SettingsRole = 'landlord' | 'caretaker' | 'lawyer' | 'admin' | 'tenant' | 'agent'
@@ -548,7 +549,7 @@ export function SettingsPage({ role }: { role: 'landlord' | 'caretaker' }) {
         setNotifications(
           leases
             .map(leaseToInspectionRequest)
-            .filter((i) => i.status === 'pending')
+            .filter((i): i is InspectionRequest => i !== null && i.status === 'pending')
             .map((i) => ({
               id: `notif-${i.id}`,
               text: `${i.tenant} requested an inspection of your property.`,
