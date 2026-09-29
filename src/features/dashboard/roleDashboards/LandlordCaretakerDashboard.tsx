@@ -134,7 +134,10 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   useEffect(() => {
     let active = true
     loadWithFallback(
-      async () => (await listCallerLeases(1, 50)).map(leaseToInspectionRequest),
+      async () =>
+        (await listCallerLeases(1, 50))
+          .map(leaseToInspectionRequest)
+          .filter((row): row is InspectionRequest => row !== null),
       [] as InspectionRequest[],
     ).then((result) => {
       if (active) {
@@ -236,66 +239,34 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   }
 
   const handleAcceptInspection = async (id: string) => {
-    console.log('[DEBUG LANDLORD] Accept inspection clicked for:', id)
-    if (isUuid(id)) {
-      try {
-        console.log('[DEBUG LANDLORD] Calling confirmInspection')
-        await confirmInspection(id)
-        console.log('[DEBUG LANDLORD] confirmInspection succeeded')
-      } catch (err) {
-        const message = apiErrorMessage(err)
-        console.log('[DEBUG LANDLORD] confirmInspection error:', message, err)
-        if (message?.includes('No pending inspection')) {
-          console.log('[DEBUG LANDLORD] No pending inspection, trying beginInspection')
-          try {
-            await beginInspection(id)
-            console.log('[DEBUG LANDLORD] beginInspection succeeded, retrying confirmInspection')
-            await confirmInspection(id)
-            console.log('[DEBUG LANDLORD] confirmInspection retry succeeded')
-          } catch (beginErr) {
-            const beginMessage = apiErrorMessage(beginErr)
-            console.log('[DEBUG LANDLORD] beginInspection error:', beginMessage, beginErr)
-            show(beginMessage || 'Could not start inspection flow.')
-            return
-          }
-        } else {
-          show(message || 'Could not confirm this inspection right now.')
-          return
-        }
-      }
+    if (!isUuid(id)) {
+      show('This inspection is not linked to a lease yet.')
+      return
+    }
+    try {
+      // Confirm requires the lease to be in InspectionRequested, so open the
+      // flow first. begin is idempotent server-side, so this is safe either way.
+      await beginInspection(id)
+      await confirmInspection(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not confirm this inspection right now.')
+      return
     }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
     show('Inspection confirmed')
   }
 
   const handleDeclineInspection = async (id: string) => {
-    console.log('[DEBUG LANDLORD] Decline inspection clicked for:', id)
-    if (isUuid(id)) {
-      try {
-        console.log('[DEBUG LANDLORD] Calling declineInspection')
-        await declineInspection(id)
-        console.log('[DEBUG LANDLORD] declineInspection succeeded')
-      } catch (err) {
-        const message = apiErrorMessage(err)
-        console.log('[DEBUG LANDLORD] declineInspection error:', message, err)
-        if (message?.includes('No pending inspection')) {
-          console.log('[DEBUG LANDLORD] No pending inspection, trying beginInspection')
-          try {
-            await beginInspection(id)
-            console.log('[DEBUG LANDLORD] beginInspection succeeded, retrying declineInspection')
-            await declineInspection(id)
-            console.log('[DEBUG LANDLORD] declineInspection retry succeeded')
-          } catch (beginErr) {
-            const beginMessage = apiErrorMessage(beginErr)
-            console.log('[DEBUG LANDLORD] beginInspection error:', beginMessage, beginErr)
-            show(beginMessage || 'Could not start inspection flow.')
-            return
-          }
-        } else {
-          show(message || 'Could not decline this inspection right now.')
-          return
-        }
-      }
+    if (!isUuid(id)) {
+      show('This inspection is not linked to a lease yet.')
+      return
+    }
+    try {
+      await beginInspection(id)
+      await declineInspection(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not decline this inspection right now.')
+      return
     }
     setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'declined' as const } : i)))
     show('Inspection declined')

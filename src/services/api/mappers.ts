@@ -565,12 +565,19 @@ export function propertyToDashboardProperty(property: Property): DashboardProper
   }
 }
 
-export function leaseToInspectionRequest(raw: unknown): InspectionRequest {
+export function leaseToInspectionRequest(raw: unknown): InspectionRequest | null {
   const item = asRow(raw)
   const listing = asRow(item.listing ?? item.listingSummary)
   const tenant = asRow(item.tenant)
   const inspection = asRow(item.inspection)
-  const status = leaseStatus(item).toLowerCase()
+
+  // Status must come from the inspection REQUEST, never the lease status.
+  // A lease in "InspectionRequested" with no request row is not something a
+  // landlord can accept, and every post-inspection lease status (LegalReview,
+  // Certified, FundedInEscrow, Released...) would otherwise render as pending.
+  const inspectionStatus = text(inspection.status).toLowerCase()
+  if (!inspectionStatus) return null
+
   const scheduled = text(inspection.scheduledDate ?? item.inspectionScheduledAt)
   const preferred = text(inspection.preferredDate ?? item.preferredInspectionDate)
   const slot = scheduled
@@ -578,12 +585,20 @@ export function leaseToInspectionRequest(raw: unknown): InspectionRequest {
     : preferred
       ? `${formatShortDate(preferred)} · requested`
       : 'Awaiting schedule'
+
+  const status: InspectionRequest['status'] =
+    inspectionStatus === 'confirmed' || inspectionStatus === 'completed'
+      ? 'confirmed'
+      : inspectionStatus === 'pending' || inspectionStatus === 'reschedulepending'
+        ? 'pending'
+        : 'declined'
+
   return {
-    id: text(item.id) || text(item.leaseId),
+    id: text(item.leaseId ?? item.id),
     tenant: text(tenant.name ?? item.tenantName) || 'Tenant',
     propertyId: text(item.listingId ?? listing.id),
     slot,
-    status: status.includes('confirm') ? 'confirmed' : 'pending',
+    status,
   }
 }
 
