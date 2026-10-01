@@ -5,22 +5,45 @@ node_modules/
 dist/
 
 # Environment variables
+# Ignore every .env variant, then re-admit the committed template. The
+# previous version enumerated a handful of suffixes by hand, which left
+# plain .env.production unguarded, and carried a typo (..env.example).
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-..env.example
+.env.*
+!.env.example
+
+# Build caches
+# These were committed before this rule existed; see the commit that
+# added it. tsc regenerates them and they differ per machine.
+*.tsbuildinfo
+
+# Test and browser-automation artifacts
+# Playwright writes session logs, snapshots and screenshots into the
+# working tree; these are machine-specific and must not be committed.
+.playwright-mcp/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+logs/
+*.log
 
 # Editor files
 .vscode/
+.idea/
+
+# Caches
+.eslintcache
+.vite/
+.cache/
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
