@@ -26,8 +26,11 @@ export function TenantAgreementPage() {
   // presents as a confusing domain error ("must be certified before signing") with
   // nothing in the UI to explain it. Logged in dev so the browser console can be
   // pasted straight into a bug report.
+  // Diagnostic, deliberately NOT behind import.meta.env.DEV: that flag is compiled
+  // out of a production build, which is exactly where a stale-bundle or stale-state
+  // bug needs explaining. One line per agreement load.
   useEffect(() => {
-    if (!agreement || !import.meta.env.DEV) return
+    if (!agreement) return
     const suspicious =
       agreement.status === 'awaiting-tenant' && agreement.signedParties.length === 0
     console.info(
@@ -41,10 +44,10 @@ export function TenantAgreementPage() {
     )
   }, [agreement, id])
 
-  const loadAgreement = useCallback(async () => {
+  const loadAgreement = useCallback(async (): Promise<TenantAgreement | null> => {
     if (!id || !isUuid(id)) {
       setAgreement(null)
-      return
+      return null
     }
     try {
       const lease = await getLease(id)
@@ -71,12 +74,16 @@ export function TenantAgreementPage() {
       setAgreement(mapped)
       loadedOnce.current = true
       setLoadError(null)
+      // Returned so callers acting on signature state get the server's answer
+      // rather than waiting a render for setState to settle.
+      return mapped
     } catch (err) {
       // A transient failure during a background poll must not discard a good copy of
       // the agreement (and with it the tenant's own signature state), so the error
       // view only replaces the content until something has loaded successfully.
       if (!loadedOnce.current) setAgreement(null)
       setLoadError(apiErrorMessage(err) || null)
+      return null
     }
   }, [id])
 
@@ -118,8 +125,8 @@ export function TenantAgreementPage() {
     )
   }
 
-  const hasSigned = (party: string) =>
-    agreement.signedParties.some((entry) => entry.toLowerCase() === party)
+  const hasSigned = (party: string, source?: TenantAgreement | null) =>
+    (source ?? agreement).signedParties.some((entry) => entry.toLowerCase() === party)
   const tenantSigned = hasSigned('tenant')
   const landlordSigned = hasSigned('landlord')
 
@@ -128,19 +135,28 @@ export function TenantAgreementPage() {
 
     setSubmitting(true)
     try {
-      // Signing is independent per party, so the tenant signs either way. Only
-      // PAYMENT requires both signatures — RecordFunding on the backend refuses a
-      // single signature after the money has already left the tenant's account,
-      // which strands the payment with no retry path. So gate the checkout, not
-      // the signature.
+      // Never trust the client's snapshot for a destructive step. A stale page, a
+      // race with the landlord signing, or a stale bundle can all leave
+      // signedParties empty while the tenant has in fact already signed — and
+      // re-signing then fails with a confusing domain error ("Agreement must be
+      // certified before signing") instead of moving on to payment. On any signing
+      // failure, re-read who has actually signed and believe the server.
       if (!tenantSigned) {
-        await signLease(id)
-        setAgreement((prev) =>
-          prev ? { ...prev, signedParties: [...prev.signedParties, 'Tenant'] } : prev,
-        )
+        try {
+          await signLease(id)
+          setAgreement((prev) =>
+            prev ? { ...prev, signedParties: [...prev.signedParties, 'Tenant'] } : prev,
+          )
+        } catch (err) {
+          const fresh = await loadAgreement()
+          const nowSigned = hasSigned('tenant', fresh)
+          if (!nowSigned && !/already/i.test(apiErrorMessage(err) ?? '')) throw err
+        }
       }
 
-      if (!landlordSigned) {
+      // Same distrust after signing: the landlord may have signed since mount.
+      const fresh = await loadAgreement()
+      if (!hasSigned('landlord', fresh)) {
         show('Signed. Waiting for your landlord to sign before payment can be made.')
         return
       }
