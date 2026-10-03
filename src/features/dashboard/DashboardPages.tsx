@@ -6,6 +6,7 @@ import { PropertyGrid } from '../../features/dashboard/components/PropertyGrid'
 import { TenantInspectionsPage } from '../../features/dashboard/tenant/TenantInspectionsPage2'
 import { TenantPaymentsPage } from '../../features/dashboard/tenant/TenantPaymentsPage'
 import { TenantSavedPage } from '../../features/dashboard/tenant/TenantSavedPage'
+import { PendingAgreementBanner } from '../../features/dashboard/tenant/PendingAgreementBanner'
 import { getAgreementStatus, type SavedProperty, type TenantAgreement } from './tenant/tenantData'
 import { useLocation } from 'react-router-dom'
 import { Link } from 'react-router-dom'
@@ -261,6 +262,13 @@ export function TenantDashboard() {
     <ToastProvider>
       <Seo title="Tenant Dashboard · Rent Bridge" description="Your Rent Bridge tenant dashboard" />
       {loadError && <div className="px-[clamp(16px,4vw,40px)] pt-8"><DataErrorBanner message={loadError} /></div>}
+      {/* Sits above the tab content so an unfinished agreement stays visible no
+          matter which tab the tenant is on. */}
+      <div className="px-[clamp(16px,4vw,40px)]">
+        <div className="pt-6">
+          <PendingAgreementBanner />
+        </div>
+      </div>
       {renderTabContent()}
     </ToastProvider>
   )

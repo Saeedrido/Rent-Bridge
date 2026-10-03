@@ -469,11 +469,29 @@ export function TenantAgreementPage() {
           {agreement.status === 'signed' && (
             <div className="rounded-xl border border-sage bg-white p-6 text-center">
               <ShieldCheckIcon className="w-12 h-12 mx-auto text-forest mb-3" />
-              <h3 className="font-serif text-xl font-semibold text-forest mb-1">Agreement Signed</h3>
-              <p className="text-sm text-mist">This agreement has been signed by all parties.</p>
+              <h3 className="font-serif text-xl font-semibold text-forest mb-1">
+                {agreement.escrowFunded ? 'Payment in Escrow' : 'Agreement Signed'}
+              </h3>
+              <p className="text-sm text-mist">
+                {agreement.escrowFunded
+                  ? 'All parties have signed and your payment is held securely in escrow.'
+                  : 'All parties have signed. Complete your payment to hold it in escrow.'}
+              </p>
+              {/* Signing flips the lease to FullySigned, which used to hide the pay
+                  panel entirely — leaving a signed-but-unpaid tenant with no way to
+                  pay from this screen. */}
+              {!agreement.escrowFunded && (
+                <button
+                  onClick={handleAcceptAndPay}
+                  disabled={submitting}
+                  className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+                >
+                  {submitting ? 'Opening checkout…' : 'Pay into escrow'}
+                </button>
+              )}
               <button
                 onClick={handleDownload}
-                className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
               >
                 <ChevronRightIcon className="w-4 h-4" />
                 View signed agreement

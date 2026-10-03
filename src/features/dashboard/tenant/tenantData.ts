@@ -67,6 +67,8 @@ export interface TenantAgreement {
   status: 'draft' | 'lawyer-review' | 'awaiting-tenant' | 'signed'
   /** Parties that have already signed, e.g. ['Landlord']. Drives the pay gate. */
   signedParties: string[]
+  /** True once escrow money has actually been accepted for this lease. */
+  escrowFunded: boolean
   lawyer: AgreementLawyer
   clauses: AgreementClause[]
   feedback: AgreementFeedback[]

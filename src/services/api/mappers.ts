@@ -381,11 +381,17 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
   const lawyer = asRow(item.lawyer ?? item.assignedLawyer)
   const tenant = asRow(item.tenant)
   const status = leaseStatus(item).toLowerCase()
+  // Once money is in escrow the lease status becomes FundedInEscrow/Releasing/
+  // Released, none of which contain 'fully' — without this the agreement page fell
+  // through to 'draft' and claimed a paid agreement was still being prepared.
+  const escrowFunded = /funded|releasing|released/.test(status)
   const title = text(item.listingTitle ?? listing.title ?? property.title) || 'Tenancy agreement'
   const location = [text(item.area ?? address.area), text(item.city ?? address.city)].filter(Boolean).join(', ')
-  const mapped: TenantAgreement['status'] = status.includes('fully')
+  const mapped: TenantAgreement['status'] = escrowFunded || status.includes('fully')
     ? 'signed'
-    : status.includes('certified') || status.includes('partial')
+    : status.includes('certified') ||
+        status.includes('partial') ||
+        status.includes('awaitingsign')
       ? 'awaiting-tenant'
       : status.includes('legal')
         ? 'lawyer-review'
@@ -418,6 +424,7 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
     date: formatDate(item.createdAt),
     status: mapped,
     signedParties,
+    escrowFunded,
     lawyer: {
       name: lawyerName || 'Awaiting assignment',
       initials: lawyerName

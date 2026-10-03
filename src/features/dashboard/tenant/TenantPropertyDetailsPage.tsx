@@ -12,6 +12,7 @@ import { useFavorites } from '../../favorites/hooks/useFavorites'
 import { DataErrorBanner, useToast } from '../roleDashboards/shared'
 import { cn } from '../../../utils/cn'
 import { ChevronLeftIcon, ChevronRightIcon, PlayCircleIcon, CheckIcon, SaveIcon } from '../components/icons'
+import { PendingAgreementBanner } from './PendingAgreementBanner'
 
 interface MediaItem {
   id: string
@@ -273,6 +274,9 @@ const featuredRef = useRef<HTMLDivElement>(null)
       <div className="bg-sand min-h-screen">
         <main className="px-[clamp(16px,4vw,40px)] pt-8 pb-16">
           <DataErrorBanner message={loadError} />
+          {/* Keeps an unfinished agreement visible while the tenant browses other
+              properties — otherwise opening a new listing hides the in-progress one. */}
+          <PendingAgreementBanner />
           <Link
             to="/dashboard"
             className="inline-flex items-center gap-1.5 text-forest font-medium hover:underline mb-6"
