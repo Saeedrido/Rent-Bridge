@@ -30,7 +30,9 @@ export interface AgreementRecord {
   propertyTitle: string
   tenant: string
   lawyer: string
-  status: 'draft' | 'with-lawyer' | 'signed'
+  status: 'draft' | 'with-lawyer' | 'certified' | 'partially-signed' | 'signed'
+  /** e.g. ['Tenant'] — parties that have already signed. */
+  signedParties: string[]
   updated: string
 }
 

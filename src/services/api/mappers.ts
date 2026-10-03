@@ -341,7 +341,11 @@ export function leaseToInspection(raw: unknown): Inspection {
 
 function mapAgreementStatusForLease(status: string): AgreementRecord['status'] {
   const value = status.toLowerCase()
-  if (value.includes('fully') || value.includes('signed') || value.includes('certified')) return 'signed'
+  if (value.includes('fully')) return 'signed'
+  if (value.includes('partial')) return 'partially-signed'
+  // 'Certified' means the lawyer approved it and it is WAITING for signatures.
+  // Mapping it to 'signed' showed a completed contract before anyone signed.
+  if (value.includes('certified')) return 'certified'
   if (value.includes('legal')) return 'with-lawyer'
   return 'draft'
 }
@@ -362,6 +366,9 @@ export function leaseToAgreementRecord(raw: unknown): AgreementRecord {
     tenant: text(tenant.name ?? item.tenantName) || 'Tenant',
     lawyer: text(lawyer.name ?? item.lawyerName) || (status.toLowerCase().includes('legal') ? 'Awaiting assignment' : 'Not assigned'),
     status: mapAgreementStatusForLease(status),
+    signedParties: Array.isArray(item.signedParties)
+      ? item.signedParties.map((p: unknown) => text(p))
+      : [],
     updated: formatShortDate(item.updatedAt ?? item.createdAt) || 'Updated today',
   }
 }

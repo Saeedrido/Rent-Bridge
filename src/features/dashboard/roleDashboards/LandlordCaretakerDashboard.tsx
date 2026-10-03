@@ -37,6 +37,7 @@ import {
   declineInspection,
   beginInspection,
   moveToLegalReview,
+  signLease,
   getLeaseAgreementPdf,
 } from '../../../services/api/leaseApi'
 import { getTransactions } from '../../../services/api/dashboardApi'
@@ -89,6 +90,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   const [submittingReview, setSubmittingReview] = useState(false)
   const [inspections, setInspections] = useState<InspectionRequest[]>([])
   const [agreements, setAgreements] = useState<AgreementRecord[]>([])
+  const [submittingAgreementId, setSubmittingAgreementId] = useState<string | null>(null)
   const [payments, setPayments] = useState<PaymentRecord[]>([])
 
   useEffect(() => {
@@ -356,6 +358,32 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
       prev.map((a) => (a.id === id ? { ...a, status: 'with-lawyer' as const, updated: 'Updated just now' } : a)),
     )
     show('Sent to lawyer for review')
+  }
+
+  const handleSignAgreement = async (id: string) => {
+    if (!isUuid(id) || submittingAgreementId === id) return
+    setSubmittingAgreementId(id)
+    try {
+      await signLease(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not sign this agreement right now.')
+      setSubmittingAgreementId(null)
+      return
+    }
+    setAgreements((prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              signedParties: [...a.signedParties, 'Landlord'],
+              status: 'signed' as const,
+              updated: 'Signed just now',
+            }
+          : a,
+      ),
+    )
+    show('Agreement signed.')
+    setSubmittingAgreementId(null)
   }
 
   const handleDownloadAgreement = async (id: string) => {
@@ -797,10 +825,13 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                       <StatusPill
                         tone={
                           ag.status === 'draft' ? 'draft' :
-                          ag.status === 'with-lawyer' ? 'withlawyer' : 'signed'
+                          ag.status === 'with-lawyer' ? 'withlawyer' :
+                          ag.status === 'signed' ? 'signed' : 'awaiting'
                         }
                       >
-                        {ag.status.replace('-', ' ')}
+                        {ag.status === 'certified'
+                          ? 'awaiting signatures'
+                          : ag.status.replace('-', ' ')}
                       </StatusPill>
                       <p className="text-sm text-mist shrink-0">{ag.updated}</p>
                       {ag.status === 'draft' && (
@@ -809,10 +840,24 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                           onClick={() => handleSendAgreement(ag.id)}
                           className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
                         >
-                          Send to lawyer
+                          Start Legal Review
                         </button>
                       )}
-                      {ag.status === 'signed' && (
+                      {(ag.status === 'certified' || ag.status === 'partially-signed') && (
+                        <button
+                          type="button"
+                          onClick={() => handleSignAgreement(ag.id)}
+                          disabled={submittingAgreementId === ag.id || ag.signedParties.includes('Landlord')}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {submittingAgreementId === ag.id
+                            ? 'Signing\u2026'
+                            : ag.signedParties.includes('Landlord')
+                              ? 'You signed'
+                              : 'Sign agreement'}
+                        </button>
+                      )}
+                      {(ag.status === 'signed' || ag.status === 'partially-signed') && (
                         <button
                           type="button"
                           onClick={() => handleDownloadAgreement(ag.id)}
