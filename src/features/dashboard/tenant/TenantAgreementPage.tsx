@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ChevronRightIcon, AlertTriangleIcon, InfoIcon, ShieldCheckIcon, PenIcon, AlertCircleIcon } from '../components/icons'
 import { PageHeading, StatusPill, cn, formatPrice, DataErrorBanner, useToast } from '../roleDashboards/shared'
@@ -19,50 +19,67 @@ export function TenantAgreementPage() {
   const [submitting, setSubmitting] = useState(false)
   const { show } = useToast()
 
-  useEffect(() => {
-    let active = true
-    if (!id) {
+  const loadedOnce = useRef(false)
+
+  const loadAgreement = useCallback(async () => {
+    if (!id || !isUuid(id)) {
       setAgreement(null)
       return
     }
-    ;(async () => {
-      if (!isUuid(id)) {
-        if (active) setAgreement(null)
-        return
-      }
+    try {
+      const lease = await getLease(id)
+      let clauses: AgreementClause[] = []
       try {
-        const lease = await getLease(id)
-        let clauses: AgreementClause[] = []
-        try {
-          clauses = agreementTermsToClauses(await getLeaseAgreement(id))
-        } catch {
-          clauses = []
-        }
-        const mapped = leaseToTenantAgreement(lease, clauses)
-        const listingId = typeof lease.listingId === 'string' ? lease.listingId : undefined
-        if (listingId) {
-          const detail = await getListing(listingId).catch(() => null)
-          if (detail) {
-            const rent = detail.priceAmount ?? mapped.totalAmount
-            const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
-            const caution = detail.cautionFeeAmount ?? 0
-            mapped.totalAmount = rent + commission + LAWYER_REVIEW_FEE + caution
-            mapped.propertyTitle = detail.title || mapped.propertyTitle
-            mapped.propertyLocation = [detail.area, detail.city].filter(Boolean).join(', ') || mapped.propertyLocation
-            if (detail.availableFrom) mapped.term = `Available from ${formatDate(detail.availableFrom)}`
-          }
-        }
-        if (active) setAgreement(mapped)
-      } catch (err) {
-        if (!active) return
-        setLoadError(apiErrorMessage(err) || null)
-        setAgreement(null)
+        clauses = agreementTermsToClauses(await getLeaseAgreement(id))
+      } catch {
+        clauses = []
       }
-    })()
-    return () => {
-      active = false
+      const mapped = leaseToTenantAgreement(lease, clauses)
+      const listingId = typeof lease.listingId === 'string' ? lease.listingId : undefined
+      if (listingId) {
+        const detail = await getListing(listingId).catch(() => null)
+        if (detail) {
+          const rent = detail.priceAmount ?? mapped.totalAmount
+          const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
+          const caution = detail.cautionFeeAmount ?? 0
+          mapped.totalAmount = rent + commission + LAWYER_REVIEW_FEE + caution
+          mapped.propertyTitle = detail.title || mapped.propertyTitle
+          mapped.propertyLocation = [detail.area, detail.city].filter(Boolean).join(', ') || mapped.propertyLocation
+          if (detail.availableFrom) mapped.term = `Available from ${formatDate(detail.availableFrom)}`
+        }
+      }
+      setAgreement(mapped)
+      loadedOnce.current = true
+      setLoadError(null)
+    } catch (err) {
+      // A transient failure during a background poll must not discard a good copy of
+      // the agreement (and with it the tenant's own signature state), so the error
+      // view only replaces the content until something has loaded successfully.
+      if (!loadedOnce.current) setAgreement(null)
+      setLoadError(apiErrorMessage(err) || null)
     }
   }, [id])
+
+  useEffect(() => {
+    void loadAgreement()
+  }, [loadAgreement])
+
+  // The tenant can be waiting on the landlord's signature for an arbitrary amount of
+  // time, so the signedParties snapshot taken at mount goes stale. Poll only while
+  // a signature is genuinely outstanding, and pause while the tab is hidden.
+  const waitingOnLandlord =
+    agreement !== null &&
+    agreement !== undefined &&
+    agreement.status === 'awaiting-tenant' &&
+    !agreement.signedParties.some((entry) => entry.toLowerCase() === 'landlord')
+
+  useEffect(() => {
+    if (!waitingOnLandlord) return
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadAgreement()
+    }, 15000)
+    return () => clearInterval(timer)
+  }, [waitingOnLandlord, loadAgreement])
 
   if (agreement === undefined) {
     return (
@@ -476,6 +493,43 @@ export function TenantAgreementPage() {
 
           {agreement.status === 'awaiting-tenant' && (
             <div className="rounded-xl border border-sage bg-white p-6">
+              {/* Signature roster — the tenant is waiting on the other party here, so
+                  showing who has actually signed is the difference between "stuck" and
+                  "in progress". */}
+              <div className="rounded-lg border border-mist/40 bg-sand/40 p-4 mb-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-mist mb-3">
+                  Signatures
+                </p>
+                <ul className="space-y-2">
+                  {([
+                    { party: 'landlord', label: 'Landlord', signed: landlordSigned },
+                    { party: 'tenant', label: 'You (tenant)', signed: tenantSigned },
+                  ] as const).map((row) => (
+                    <li key={row.party} className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-forest">{row.label}</span>
+                      {row.signed ? (
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-forest">
+                          <ShieldCheckIcon className="w-4 h-4 text-forest" />
+                          Signed
+                        </span>
+                      ) : row.party === 'landlord' ? (
+                        <span className="inline-flex items-center gap-1.5 text-sm text-mist">
+                          <span className="inline-block h-2 w-2 rounded-full bg-flame animate-pulse" />
+                          Awaiting signature
+                        </span>
+                      ) : (
+                        <span className="text-sm text-mist">Not signed yet</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {!landlordSigned && (
+                  <p className="text-xs text-mist mt-3">
+                    This page updates on its own every 15 seconds, so you will see the button
+                    change to &ldquo;Pay into escrow&rdquo; as soon as your landlord signs.
+                  </p>
+                )}
+              </div>
               <AlertCircleIcon className="w-12 h-12 mx-auto text-flame mb-3" />
               <h3 className="font-serif text-xl font-semibold text-forest mb-1">Action Required</h3>
               {landlordSigned ? (
