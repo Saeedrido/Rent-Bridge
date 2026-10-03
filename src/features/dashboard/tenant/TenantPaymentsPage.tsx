@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronRightIcon, LockIcon, DataErrorBanner } from '../roleDashboards/shared'
 import { PageHeading, StatusPill, cn } from '../roleDashboards/shared'
 import { formatPrice } from './tenantUtils'
@@ -6,31 +7,71 @@ import { getPaymentStatusBadge, type Payment } from './tenantData'
 import { loadWithFallback } from '../../../services/api/fallback'
 import { getTransactions } from '../../../services/api/dashboardApi'
 import { transactionToPayment } from '../../../services/api/mappers'
-import { listCallerLeases, fundEscrow } from '../../../services/api/leaseApi'
+import { listCallerLeases } from '../../../services/api/leaseApi'
 import { getListing } from '../../../services/api/listingApi'
-import { apiErrorMessage } from '../../../services/api/fallback'
-import { useToast } from '../roleDashboards/shared'
+import { pendingActionForLease } from './PendingAgreementBanner'
 
 const PLATFORM_COMMISSION_RATE = 0.05
 const LAWYER_REVIEW_FEE = 45000
 
-interface EscrowSummary {
+interface AgreementMoney {
   leaseId: string
   title: string
   location: string
-  rent: number
-  caution: number
-  legal: number
-  commission: number
   total: number
+  /** 'none' once money is in escrow — the ledger below is the record from then on. */
+  stage: 'signing' | 'payment-due' | 'escrowed' | 'released'
+  stageLabel: string
+  needsTenant: boolean
 }
 
+function readStage(lease: { status?: string; signedParties?: unknown }) {
+  const status = String(lease.status ?? '').toLowerCase()
+  const parties = Array.isArray(lease.signedParties)
+    ? lease.signedParties
+        .map((entry) =>
+          typeof entry === 'string'
+            ? entry
+            : String((entry as { party?: unknown } | null)?.party ?? ''),
+        )
+        .filter(Boolean)
+    : []
+  const tenantSigned = parties.some((p) => p.toLowerCase() === 'tenant')
+
+  if (status.includes('released')) return { stage: 'released' as const, label: 'Released' }
+  if (status.includes('releasing')) return { stage: 'escrowed' as const, label: 'Processing payout' }
+  if (status.includes('funded')) return { stage: 'escrowed' as const, label: 'In escrow' }
+  if (status.includes('fully')) return { stage: 'payment-due' as const, label: 'Payment due' }
+  if (status.includes('cancel') || status.includes('declin'))
+    return { stage: 'signing' as const, label: 'Cancelled' }
+  if (
+    status.includes('certified') ||
+    status.includes('partial') ||
+    status.includes('awaitingsign')
+  ) {
+    return tenantSigned
+      ? { stage: 'signing' as const, label: 'Awaiting landlord' }
+      : { stage: 'signing' as const, label: 'Awaiting your signature' }
+  }
+  if (status.includes('legal')) return { stage: 'signing' as const, label: 'Lawyer reviewing' }
+  return { stage: 'signing' as const, label: 'In progress' }
+}
+
+/**
+ * Payments is a read-only ledger.
+ *
+ * The escrow pay button used to live here, and it was worse than a duplicate: it
+ * picked a lease with `leases.find(l => l.status !== 'fullysigned')`, so with more
+ * than one tenancy it could charge the WRONG lease — and because
+ * 'fundedinescrow' also fails that check it would offer to pay again for a lease
+ * already funded. Payment is now initiated in exactly one place, the agreement
+ * screen, where the tenant can see the terms and both signatures first.
+ */
 export function TenantPaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([])
-  const [escrow, setEscrow] = useState<EscrowSummary | null>(null)
+  const [agreements, setAgreements] = useState<AgreementMoney[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [checkingOut, setCheckingOut] = useState(false)
-  const { show } = useToast()
+  const navigate = useNavigate()
 
   useEffect(() => {
     let active = true
@@ -51,60 +92,51 @@ export function TenantPaymentsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const leases = await listCallerLeases(1, 50)
-        if (!active) return
-        const open = leases.find((lease) => {
-          const status = (lease.status ?? '').toLowerCase()
-          return lease.id && lease.listingId && status !== 'fullysigned' && !status.includes('cancel') && !status.includes('declin')
-        })
-        const lease = open ?? leases.find((l) => l.id && l.listingId)
-        if (!lease?.listingId) return
-        const detail = await getListing(lease.listingId).catch(() => null)
-        if (!active) return
+  const loadAgreements = useCallback(async () => {
+    try {
+      const leases = await listCallerLeases(1, 50)
+      const withListing = leases.filter(
+        (lease) => lease.id && lease.listingId && !String(lease.status ?? '').toLowerCase().includes('cancel'),
+      )
+
+      // Listing detail carries the price breakdown, which the lease row does not.
+      const details = await Promise.allSettled(
+        withListing.map((lease) => getListing(String(lease.listingId))),
+      )
+
+      const rows: AgreementMoney[] = withListing.map((lease, index) => {
+        const detail = details[index].status === 'fulfilled' ? details[index].value : null
         const rent = detail?.priceAmount ?? 0
         const caution = detail?.cautionFeeAmount ?? 0
         const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
-        setEscrow({
-          leaseId: lease.id,
-          title: detail?.title ?? 'Rent package',
+        const stage = readStage(lease)
+        return {
+          leaseId: String(lease.id),
+          title: detail?.title || String((lease as Record<string, unknown>).listingTitle ?? 'Tenancy'),
           location: [detail?.area, detail?.city].filter(Boolean).join(', '),
-          rent,
-          caution,
-          legal: LAWYER_REVIEW_FEE,
-          commission,
           total: rent + commission + LAWYER_REVIEW_FEE + caution,
-        })
-      } catch {
-        /* escrow stays hidden until a tenancy exists */
-      }
-    })()
-    return () => {
-      active = false
+          stage: stage.stage,
+          stageLabel: stage.label,
+          needsTenant: Boolean(pendingActionForLease(lease)),
+        }
+      })
+
+      // Anything the tenant still owes comes first — a due payment silently buried
+      // under a list of tenancies is the same "it vanished" problem as before.
+      rows.sort((a, b) => Number(b.needsTenant) - Number(a.needsTenant))
+      setAgreements(rows)
+    } catch {
+      /* the ledger below still renders without the per-agreement summary */
     }
   }, [])
 
-  const handlePay = async () => {
-    if (!escrow) return
-    setCheckingOut(true)
-    try {
-      const res = await fundEscrow(escrow.leaseId)
-      const url = res.checkoutUrl ?? res.url
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer')
-        show('Opening secure checkout for your escrow payment.')
-      } else {
-        show('Checkout is being prepared — check payment history shortly.')
-      }
-    } catch (err) {
-      show(apiErrorMessage(err) || 'Could not start escrow checkout right now.')
-    } finally {
-      setCheckingOut(false)
-    }
-  }
+  useEffect(() => {
+    void loadAgreements()
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadAgreements()
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [loadAgreements])
 
   return (
     <div className="px-[clamp(16px,4vw,40px)]">
@@ -113,72 +145,65 @@ export function TenantPaymentsPage() {
       <div className="mt-8">
         <div className="grid gap-10 lg:grid-cols-[1fr_420px]">
           <div className="space-y-8">
-            {escrow ? (
-              <div className="rounded-xl border border-sage bg-white p-6">
-                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-sage">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-soft text-forest">
-                    <LockIcon className="w-5 h-5" />
-                  </div>
-                  <h3 className="font-semibold text-lg text-forest">Pay your rent into escrow</h3>
+            <div className="rounded-xl border border-sage bg-white p-6">
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-sage">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-soft text-forest">
+                  <LockIcon className="w-5 h-5" />
                 </div>
-
-                <div className="mb-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-forest mb-2">
-                    {escrow.title}
-                    {escrow.location ? ` · ${escrow.location}` : ''}
-                  </p>
-                  <p className="font-serif text-3xl font-bold text-forest">{formatPrice(escrow.total)}</p>
-                </div>
-
-                <div className="space-y-3 mb-6">
-                  <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Annual rent</span>
-                    <span className="font-semibold text-ink">{formatPrice(escrow.rent)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Platform commission (5%)</span>
-                    <span className="font-semibold text-ink">{formatPrice(escrow.commission)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Legal fee — lawyer review</span>
-                    <span className="font-semibold text-ink">{formatPrice(escrow.legal)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Caution fee (refundable)</span>
-                    <span className="font-semibold text-ink">{escrow.caution > 0 ? formatPrice(escrow.caution) : '—'}</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-sage pt-4 mb-6">
-                  <div className="flex justify-between">
-                    <span className="font-semibold text-lg text-ink">Total package</span>
-                    <span className="font-serif text-2xl font-bold text-forest">{formatPrice(escrow.total)}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handlePay}
-                  disabled={checkingOut || escrow.total <= 0}
-                  className="w-full mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
-                >
-                  {checkingOut ? 'Preparing checkout…' : 'Pay into Escrow'}
-                </button>
+                <h3 className="font-semibold text-lg text-forest">Your tenancies</h3>
               </div>
-            ) : (
-              <div className="rounded-xl border border-sage bg-white p-6">
-                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-sage">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-soft text-forest">
-                    <LockIcon className="w-5 h-5" />
-                  </div>
-                  <h3 className="font-semibold text-lg text-forest">Pay your rent into escrow</h3>
-                </div>
+
+              {agreements.length === 0 ? (
                 <p className="text-sm text-mist leading-relaxed">
-                  Once you request an inspection on a property and start a tenancy, your rent package
-                  (rent + commission + legal fee + caution) will appear here for secure escrow payment.
+                  Once you request an inspection on a property and start a tenancy, it will appear here
+                  with its payment status.
                 </p>
-              </div>
-            )}
+              ) : (
+                <ul className="divide-y divide-sage">
+                  {agreements.map((row) => (
+                    <li
+                      key={row.leaseId}
+                      className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[15px] text-ink truncate">{row.title}</p>
+                        <p className="text-sm text-mist">
+                          {row.location ? `${row.location} · ` : ''}
+                          {row.total > 0 ? formatPrice(row.total) : 'Amount pending'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <StatusPill
+                          tone={
+                            row.stage === 'payment-due'
+                              ? 'awaiting'
+                              : row.stage === 'released'
+                                ? 'paid'
+                                : row.stage === 'escrowed'
+                                  ? 'confirmed'
+                                  : 'draft'
+                          }
+                        >
+                          {row.stageLabel}
+                        </StatusPill>
+                        {/*
+                          Navigates to the agreement rather than opening checkout
+                          here — payment is started in exactly one place.
+                        */}
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/dashboard/tenant/agreement/${row.leaseId}`)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-forest/30 px-3 py-1.5 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                        >
+                          {row.stage === 'payment-due' ? 'Pay now' : 'View'}
+                          <ChevronRightIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <div className="rounded-xl border border-sage bg-white p-6">
               <div className="flex items-center justify-between mb-4">
@@ -186,9 +211,9 @@ export function TenantPaymentsPage() {
                 <ChevronRightIcon className="w-5 h-5 text-mist" />
               </div>
               <p className="text-sm text-mist leading-relaxed">
-                Your funds are held securely in escrow until the lawyer reviews and approves the agreement.
-                The landlord only receives payment after the agreement is signed by all parties.
-                Caution fee is refundable at the end of the tenancy, subject to inspection.
+                Your funds are held securely in escrow until the lawyer reviews and approves the
+                agreement. The landlord only receives payment after the agreement is signed by all
+                parties. Caution fee is refundable at the end of the tenancy, subject to inspection.
               </p>
             </div>
           </div>
@@ -226,9 +251,7 @@ export function TenantPaymentsPage() {
                         <span className="font-semibold text-lg text-ink shrink-0">
                           {formatPrice(payment.amount)}
                         </span>
-                        <StatusPill
-                          tone={getPaymentStatusBadge(payment.status).tone}
-                        >
+                        <StatusPill tone={getPaymentStatusBadge(payment.status).tone}>
                           {getPaymentStatusBadge(payment.status).label}
                         </StatusPill>
                       </div>
