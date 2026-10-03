@@ -396,9 +396,13 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
       : status.includes('legal')
         ? 'lawyer-review'
         : 'draft'
+  // GET /leases/{id} nests signatures under `agreement` (LeaseDetailResponse), so
+  // reading only the top level returned [] on a fully signed lease and the page
+  // tried to sign again. Accept either shape.
+  const agreement = asRow(item.agreement ?? item.agreementDetail)
   // Party names come back PascalCased from the API ('Landlord'/'Tenant'), but match
   // case-insensitively so a casing change cannot silently disable the pay gate.
-  const signedParties = arrayValue(item.signatures)
+  const signedParties = arrayValue(agreement.signatures ?? item.signatures)
     .map((entry) => text(asRow(entry).party))
     .filter(Boolean)
   const lawyerName = text(lawyer.name ?? item.lawyerName)
