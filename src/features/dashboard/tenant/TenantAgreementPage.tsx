@@ -28,19 +28,16 @@ export function TenantAgreementPage() {
   // pasted straight into a bug report.
   // Diagnostic, deliberately NOT behind import.meta.env.DEV: that flag is compiled
   // out of a production build, which is exactly where a stale-bundle or stale-state
-  // bug needs explaining. One line per agreement load.
+  // bug needs explaining. Flat single line so it is readable in the console without
+  // expanding anything (the object is a second arg purely for drill-down).
   useEffect(() => {
     if (!agreement) return
     const suspicious =
       agreement.status === 'awaiting-tenant' && agreement.signedParties.length === 0
     console.info(
-      `[agreement]${suspicious ? ' SUSPICIOUS: status awaits signature but none present' : ''}`,
-      {
-        leaseId: id,
-        status: agreement.status,
-        signedParties: agreement.signedParties,
-        escrowFunded: agreement.escrowFunded,
-      },
+      `[agreement]${suspicious ? ' SUSPICIOUS' : ''} lease=${id} status=${agreement.status} ` +
+        `signed=[${agreement.signedParties.join('|')}] funded=${agreement.escrowFunded}`,
+      { leaseId: id, status: agreement.status, signedParties: agreement.signedParties },
     )
   }, [agreement, id])
 
@@ -135,6 +132,13 @@ export function TenantAgreementPage() {
 
     setSubmitting(true)
     try {
+      // Step-by-step trace: this flow spans a cached page, two endpoints and a
+      // domain guard, and "it didn't work" is otherwise impossible to place.
+      const trace = (step: string, extra = '') =>
+        console.info(`[pay] ${step}${extra ? ` ${extra}` : ''}`)
+
+      trace('start', `clientTenantSigned=${tenantSigned} clientLandlordSigned=${landlordSigned}`)
+
       // Never trust the client's snapshot for a destructive step. A stale page, a
       // race with the landlord signing, or a stale bundle can all leave
       // signedParties empty while the tenant has in fact already signed — and
@@ -144,25 +148,32 @@ export function TenantAgreementPage() {
       if (!tenantSigned) {
         try {
           await signLease(id)
+          trace('signed-as-tenant')
           setAgreement((prev) =>
             prev ? { ...prev, signedParties: [...prev.signedParties, 'Tenant'] } : prev,
           )
         } catch (err) {
+          trace('sign-attempt-failed', apiErrorMessage(err) ?? 'unknown error')
           const fresh = await loadAgreement()
           const nowSigned = hasSigned('tenant', fresh)
+          trace('sign-recheck', `serverSaysTenantSigned=${nowSigned}`)
           if (!nowSigned && !/already/i.test(apiErrorMessage(err) ?? '')) throw err
         }
       }
 
       // Same distrust after signing: the landlord may have signed since mount.
       const fresh = await loadAgreement()
-      if (!hasSigned('landlord', fresh)) {
+      const landlordHasSigned = hasSigned('landlord', fresh)
+      trace('landlord-recheck', `serverSaysLandlordSigned=${landlordHasSigned}`)
+      if (!landlordHasSigned) {
         show('Signed. Waiting for your landlord to sign before payment can be made.')
         return
       }
 
+      trace('calling-fundEscrow')
       const res = await fundEscrow(id)
       const url = res.checkoutUrl ?? res.url
+      trace('fundEscrow-returned', `hasUrl=${Boolean(url)}`)
       if (url) {
         window.open(url, '_blank', 'noopener,noreferrer')
         show('Agreement signed. Opening secure checkout for your escrow payment.')
@@ -170,6 +181,7 @@ export function TenantAgreementPage() {
         show('Agreement signed. Checkout is being prepared — see the Payments tab.')
       }
     } catch (err) {
+      console.info(`[pay] FAILED ${apiErrorMessage(err) ?? 'unknown error'}`)
       show(apiErrorMessage(err) || 'Could not accept and pay right now.')
     } finally {
       setSubmitting(false)
