@@ -65,6 +65,8 @@ export interface TenantAgreement {
   term: string
   date: string
   status: 'draft' | 'lawyer-review' | 'awaiting-tenant' | 'signed'
+  /** Parties that have already signed, e.g. ['Landlord']. Drives the pay gate. */
+  signedParties: string[]
   lawyer: AgreementLawyer
   clauses: AgreementClause[]
   feedback: AgreementFeedback[]

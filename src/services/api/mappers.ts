@@ -390,6 +390,11 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
       : status.includes('legal')
         ? 'lawyer-review'
         : 'draft'
+  // Party names come back PascalCased from the API ('Landlord'/'Tenant'), but match
+  // case-insensitively so a casing change cannot silently disable the pay gate.
+  const signedParties = arrayValue(item.signatures)
+    .map((entry) => text(asRow(entry).party))
+    .filter(Boolean)
   const lawyerName = text(lawyer.name ?? item.lawyerName)
   const feedback = clauses
     .filter((clause) => Boolean(clause.note))
@@ -412,6 +417,7 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
     term: text(item.term) || 'Fixed tenancy term',
     date: formatDate(item.createdAt),
     status: mapped,
+    signedParties,
     lawyer: {
       name: lawyerName || 'Awaiting assignment',
       initials: lawyerName

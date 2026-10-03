@@ -81,11 +81,33 @@ export function TenantAgreementPage() {
     )
   }
 
+  const hasSigned = (party: string) =>
+    agreement.signedParties.some((entry) => entry.toLowerCase() === party)
+  const tenantSigned = hasSigned('tenant')
+  const landlordSigned = hasSigned('landlord')
+
   const handleAcceptAndPay = async () => {
     if (!id || submitting) return
+
     setSubmitting(true)
     try {
-      await signLease(id)
+      // Signing is independent per party, so the tenant signs either way. Only
+      // PAYMENT requires both signatures — RecordFunding on the backend refuses a
+      // single signature after the money has already left the tenant's account,
+      // which strands the payment with no retry path. So gate the checkout, not
+      // the signature.
+      if (!tenantSigned) {
+        await signLease(id)
+        setAgreement((prev) =>
+          prev ? { ...prev, signedParties: [...prev.signedParties, 'Tenant'] } : prev,
+        )
+      }
+
+      if (!landlordSigned) {
+        show('Signed. Waiting for your landlord to sign before payment can be made.')
+        return
+      }
+
       const res = await fundEscrow(id)
       const url = res.checkoutUrl ?? res.url
       if (url) {
@@ -456,13 +478,31 @@ export function TenantAgreementPage() {
             <div className="rounded-xl border border-sage bg-white p-6">
               <AlertCircleIcon className="w-12 h-12 mx-auto text-flame mb-3" />
               <h3 className="font-serif text-xl font-semibold text-forest mb-1">Action Required</h3>
-              <p className="text-sm text-mist mb-4">The lawyer has completed their review. Please review the feedback and accept to proceed.</p>
+              {landlordSigned ? (
+                <p className="text-sm text-mist mb-4">
+                  The lawyer has completed their review and your landlord has signed. Review the
+                  feedback, then sign to pay into escrow.
+                </p>
+              ) : (
+                <p className="text-sm text-mist mb-4">
+                  The lawyer has completed their review. You can sign now — payment opens once your
+                  landlord has signed too.
+                </p>
+              )}
               <button
                 onClick={handleAcceptAndPay}
                 disabled={submitting}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
               >
-                {submitting ? 'Accepting…' : 'Accept & pay into escrow'}
+                {submitting
+                  ? 'Working…'
+                  : tenantSigned
+                    ? landlordSigned
+                      ? 'Pay into escrow'
+                      : 'Waiting for landlord'
+                    : landlordSigned
+                      ? 'Accept & pay into escrow'
+                      : 'Sign agreement'}
               </button>
             </div>
           )}
