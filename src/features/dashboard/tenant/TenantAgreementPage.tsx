@@ -21,6 +21,26 @@ export function TenantAgreementPage() {
 
   const loadedOnce = useRef(false)
 
+  // Dev-only diagnostic. The signature roster, the pay gate and the pending banner
+  // are all driven by lease.signedParties, and a stale or missing field there
+  // presents as a confusing domain error ("must be certified before signing") with
+  // nothing in the UI to explain it. Logged in dev so the browser console can be
+  // pasted straight into a bug report.
+  useEffect(() => {
+    if (!agreement || !import.meta.env.DEV) return
+    const suspicious =
+      agreement.status === 'awaiting-tenant' && agreement.signedParties.length === 0
+    console.info(
+      `[agreement]${suspicious ? ' SUSPICIOUS: status awaits signature but none present' : ''}`,
+      {
+        leaseId: id,
+        status: agreement.status,
+        signedParties: agreement.signedParties,
+        escrowFunded: agreement.escrowFunded,
+      },
+    )
+  }, [agreement, id])
+
   const loadAgreement = useCallback(async () => {
     if (!id || !isUuid(id)) {
       setAgreement(null)

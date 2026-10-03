@@ -124,7 +124,7 @@ export function PendingAgreementBanner() {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button
-          onClick={() => navigate(`/dashboard/tenant/agreement/${pending.leaseId}`)}
+          onClick={() => navigate(`/dashboard/agreement/${pending.leaseId}`)}
           className="rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark"
         >
           {isPay ? 'Pay now' : 'Review & sign'}

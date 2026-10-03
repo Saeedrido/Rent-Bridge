@@ -192,7 +192,7 @@ export function TenantPaymentsPage() {
                         */}
                         <button
                           type="button"
-                          onClick={() => navigate(`/dashboard/tenant/agreement/${row.leaseId}`)}
+                          onClick={() => navigate(`/dashboard/agreement/${row.leaseId}`)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-forest/30 px-3 py-1.5 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
                         >
                           {row.stage === 'payment-due' ? 'Pay now' : 'View'}
