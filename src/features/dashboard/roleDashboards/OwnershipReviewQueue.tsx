@@ -293,14 +293,22 @@ function ReviewCard({
             const isRejecting = rejectTarget?.propertyId === property.propertyId && rejectTarget.documentId === doc.documentId
             console.log('[DOC DEBUG] Document:', { documentId: doc.documentId, fileKey: doc.fileKey, status: doc.status })
             
-            const handleViewDocument = (e: React.MouseEvent) => {
+            const handleDownloadDocument = (e: React.MouseEvent) => {
               e.preventDefault()
               if (!doc.fileKey) return
-              // Use regular URL for documents with access_mode: public (new uploads)
-              // Add cache buster to bypass CDN cache
-              const url = doc.fileKey + (doc.fileKey.includes('?') ? '&' : '?') + 't=' + Date.now()
-              console.log('[DOC DEBUG] Opening document:', url)
-              window.open(url, '_blank', 'noopener,noreferrer')
+              // Add cache buster to bypass CDN cache and force download
+              const url = doc.fileKey + (doc.fileKey.includes('?') ? '&' : '?') + 't=' + Date.now() + '&download=1'
+              console.log('[DOC DEBUG] Downloading document:', url)
+              
+              // Create a temporary link to trigger download
+              const link = document.createElement('a')
+              link.href = url
+              link.download = `document-${doc.documentId.slice(0, 8)}`
+              link.target = '_blank'
+              link.rel = 'noopener,noreferrer'
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
             }
             
             return (
@@ -316,10 +324,10 @@ function ReviewCard({
                         {doc.fileKey && (
                           <a
                             href="#"
-                            onClick={handleViewDocument}
+                            onClick={handleDownloadDocument}
                             className="ml-2 font-normal text-forest hover:underline"
                           >
-                            View
+                            Download
                           </a>
                         )}
                       </p>
