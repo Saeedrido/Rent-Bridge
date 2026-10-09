@@ -94,6 +94,7 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
   const [paymentPlan, setPaymentPlan] = useState<'outright' | 'installment'>('outright')
   const [realHouseFee, setRealHouseFee] = useState('')
   const [agentFee, setAgentFee] = useState('')
+  const [rentFrequency, setRentFrequency] = useState<'monthly' | 'quarterly' | 'semi-annually' | 'annually'>('annually')
 
   const [formData, setFormData] = useState({
     listingTitle: '',
@@ -197,6 +198,7 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
         description: formData.description,
         listingType: listingMode,
         paymentPlan,
+        rentFrequency: rentFrequency,
         cautionFeeAmount:
           listingMode === 'rent' && cautionFeeActive === 'yes'
             ? Number(formData.cautionFeeAmount) || null
@@ -458,26 +460,40 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-forest mb-3">Apartment type</label>
-                <TypeableSelect
-                  value={formData.apartmentType}
-                  onChange={(value) => setFormData({ ...formData, apartmentType: value })}
-                  options={apartmentTypes}
-                  placeholder="Search or type a type e.g. 2-bedroom"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-forest mb-3">Available from</label>
-                <input
-                  type="text"
-                  value={formData.availableFrom}
-                  onChange={(e) => setFormData({ ...formData, availableFrom: e.target.value })}
-                  className={inputClass}
-                  placeholder="1 Sept 2026"
-                />
-              </div>
+<div>
+              <label className="block text-sm font-semibold text-forest mb-3">Apartment type</label>
+              <TypeableSelect
+                value={formData.apartmentType}
+                onChange={(value) => setFormData({ ...formData, apartmentType: value })}
+                options={apartmentTypes}
+                placeholder="Search or type a type e.g. 2-bedroom"
+              />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-forest mb-3">Available from</label>
+              <input
+                type="text"
+                value={formData.availableFrom}
+                onChange={(e) => setFormData({ ...formData, availableFrom: e.target.value })}
+                className={inputClass}
+                placeholder="1 Sept 2026"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-forest mb-3">Rent frequency</label>
+              <select
+                value={rentFrequency}
+                onChange={(e) => setRentFrequency(e.target.value as 'monthly' | 'quarterly' | 'semi-annually' | 'annually')}
+                className={inputClass}
+              >
+                <option value="annually">Annually (per year)</option>
+                <option value="semi-annually">Semi-annually (every 6 months)</option>
+                <option value="quarterly">Quarterly (every 3 months)</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <p className="mt-1 text-xs text-mist">How often the tenant pays the rent amount</p>
+            </div>
+          </div>
 
             <div>
               <label className="block text-sm font-semibold text-forest mb-3">Description</label>

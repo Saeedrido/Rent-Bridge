@@ -10,6 +10,7 @@ export interface DashboardProperty {
   typeLabel: string
   image: string
   verified: boolean
+  rentFrequency?: 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
 }
 
 export const dashboardProperties: DashboardProperty[] = [

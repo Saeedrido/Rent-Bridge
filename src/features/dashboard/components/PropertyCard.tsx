@@ -54,7 +54,12 @@ export function PropertyCard({ property, isSaved = false, onToggleSave }: Proper
           <h3 className="mb-1 font-serif text-lg font-semibold text-green-dark">{property.title}</h3>
           <div className="text-[15px] font-semibold text-ink">
             {formatNaira(property.price)}{' '}
-            <span className="text-[13px] font-normal text-ink/60">/ year</span>
+            <span className="text-[13px] font-normal text-ink/60">
+              {property.rentFrequency === 'monthly' ? '/ month'
+                : property.rentFrequency === 'quarterly' ? '/ quarter'
+                : property.rentFrequency === 'semi-annually' ? '/ 6 months'
+                : '/ year'}
+              </span>
           </div>
           <div className="my-3 h-px w-full bg-green/10" />
           <div className="flex items-center gap-4 text-sm text-ink/70">

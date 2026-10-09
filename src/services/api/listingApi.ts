@@ -10,6 +10,7 @@ export enum ListingStatus {
 
 export type ListingTypeValue = 'rent' | 'sale'
 export type PaymentPlanValue = 'outright' | 'installment'
+export type RentFrequencyValue = 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
 
 export interface CreateListingPayload {
   propertyId: string
@@ -18,6 +19,7 @@ export interface CreateListingPayload {
   description?: string
   listingType?: ListingTypeValue
   paymentPlan?: PaymentPlanValue
+  rentFrequency?: RentFrequencyValue
   cautionFeeAmount?: number | null
   otherExpenses?: string
   realHouseFeeAmount?: number | null
@@ -59,6 +61,7 @@ export interface ListingDetail extends ListingRecord {
   publishedAt?: string
   listingType?: ListingTypeValue | number
   paymentPlan?: PaymentPlanValue | number
+  rentFrequency?: string
   cautionFeeAmount?: number | null
   realHouseFeeAmount?: number | null
   agentFeeAmount?: number | null
