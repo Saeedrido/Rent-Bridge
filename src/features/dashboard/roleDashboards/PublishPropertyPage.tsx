@@ -122,11 +122,19 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
   const [payoutAccount, setPayoutAccount] = useState<{ bankName: string; accountNumberMasked: string } | null>(null)
   const [payoutLoading, setPayoutLoading] = useState(true)
 
+  const MAX_DESCRIPTION_LENGTH = 2000
+
   const totalPackage = (Number(realHouseFee) || 0) + (Number(agentFee) || 0)
 
   const validateForm = (): string | null => {
     if (!formData.listingTitle || formData.listingTitle.trim().length < 3) {
       return 'Listing title must be at least 3 characters.'
+    }
+    if (!formData.description || formData.description.trim().length < 10) {
+      return 'Description must be at least 10 characters.'
+    }
+    if (formData.description.length > MAX_DESCRIPTION_LENGTH) {
+      return `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`
     }
     if (documents.length === 0) {
       return 'Please attach at least one ownership document before publishing.'
@@ -478,7 +486,21 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 className={`${inputClass} min-h-[140px] resize-y`}
                 placeholder="Describe the property features and amenities..."
+                maxLength={MAX_DESCRIPTION_LENGTH}
               />
+              <div className="mt-2 flex items-center justify-between">
+                <span className={cn(
+                  'text-sm',
+                  formData.description.length > MAX_DESCRIPTION_LENGTH * 0.9 ? 'text-flame' : 'text-mist'
+                )}>
+                  {formData.description.length} / {MAX_DESCRIPTION_LENGTH} characters
+                </span>
+                {formData.description.length > MAX_DESCRIPTION_LENGTH * 0.9 && (
+                  <span className="text-sm text-flame font-medium">
+                    {formData.description.length > MAX_DESCRIPTION_LENGTH ? 'Exceeded' : 'Approaching limit'}
+                  </span>
+                )}
+              </div>
             </div>
 
             {role === 'caretaker' && (

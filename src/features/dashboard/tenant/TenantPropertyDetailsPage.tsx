@@ -32,9 +32,6 @@ function formatPrice(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`
 }
 
-const PLATFORM_COMMISSION_RATE = 0.05
-const LAWYER_REVIEW_FEE = 45000
-
 export default function TenantPropertyDetailsPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -45,6 +42,7 @@ export default function TenantPropertyDetailsPage() {
     description: 'Contact the listing owner for more details.',
     landlord: { name: 'Rent Bridge host', role: 'Host' },
   })
+  const [amenities, setAmenities] = useState<string[]>([])
   const [cautionFee, setCautionFee] = useState(0)
   const [availableFrom, setAvailableFrom] = useState<string | undefined>(undefined)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -80,6 +78,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
         }
         const dashboard = propertyToDashboardProperty(full)
         setProperty(dashboard)
+        setAmenities(full.amenities ?? [])
         setDetails({
           description: full.description,
           landlord: { name: full.landlord.name, role: full.landlord.verified ? 'Verified host' : 'Host' },
@@ -441,6 +440,20 @@ const featuredRef = useRef<HTMLDivElement>(null)
                 <h3 className="font-serif text-xl font-semibold text-forest mb-3">About this home</h3>
                 <p className="text-[15px] text-[#374151] leading-relaxed">{details.description}</p>
               </div>
+
+              {amenities.length > 0 && (
+                <div className="rounded-xl border border-sage bg-white p-6">
+                  <h3 className="font-serif text-xl font-semibold text-forest mb-4">Amenities</h3>
+                  <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {amenities.map((amenity) => (
+                      <li key={amenity} className="flex items-center gap-2 text-[15px] text-[#374151]">
+                        <CheckIcon className="w-4 h-4 shrink-0 text-forest" />
+                        <span>{amenity}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="lg:sticky lg:top-24 lg:self-start">
@@ -452,14 +465,6 @@ const featuredRef = useRef<HTMLDivElement>(null)
 
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Platform commission (5%)</span>
-                    <span className="font-semibold text-ink">{formatPrice(Math.round(property.price * PLATFORM_COMMISSION_RATE))}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-[#374151]">
-                    <span>Lawyer review</span>
-                    <span className="font-semibold text-ink">{formatPrice(LAWYER_REVIEW_FEE)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-[#374151]">
                     <span>Caution fee (refundable)</span>
                     <span className="font-semibold text-ink">{cautionFee > 0 ? formatPrice(cautionFee) : '—'}</span>
                   </div>
@@ -469,7 +474,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
                   <div className="flex justify-between">
                     <span className="font-semibold text-lg text-ink">Total package</span>
                     <span className="font-serif text-2xl font-bold text-forest">
-                      {formatPrice(property.price + Math.round(property.price * PLATFORM_COMMISSION_RATE) + LAWYER_REVIEW_FEE + cautionFee)}
+                      {formatPrice(property.price + cautionFee)}
                     </span>
                   </div>
                 </div>

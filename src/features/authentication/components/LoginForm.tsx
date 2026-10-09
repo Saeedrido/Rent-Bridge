@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Input, Field } from '../../../components/ui'
+import { Button, Input, PasswordInput, Field } from '../../../components/ui'
 import { loginUser } from '../../../services/api/authApi'
 import { getUser, normalizeRole } from '../../../services/api/tokens'
 import { apiErrorMessage } from '../../../services/api/fallback'
@@ -52,7 +52,7 @@ export function LoginForm() {
         <Input name="email" type="email" required placeholder="you@example.com" autoComplete="email" />
       </Field>
       <Field label="Password" labelClassName="text-green-dark">
-        <Input name="password" type="password" required placeholder="••••••••" autoComplete="current-password" />
+        <PasswordInput name="password" required placeholder="••••••••" autoComplete="current-password" />
       </Field>
       {error && <p className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-700">{error}</p>}
       <Button type="submit" fullWidth size="lg" disabled={submitting}>

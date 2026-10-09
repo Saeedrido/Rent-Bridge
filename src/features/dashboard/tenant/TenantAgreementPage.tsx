@@ -9,9 +9,6 @@ import { agreementTermsToClauses, isUuid, leaseToTenantAgreement, formatDate } f
 import { apiErrorMessage } from '../../../services/api/fallback'
 import { getListing } from '../../../services/api/listingApi'
 
-const PLATFORM_COMMISSION_RATE = 0.05
-const LAWYER_REVIEW_FEE = 45000
-
 export function TenantAgreementPage() {
   const { id } = useParams<{ id: string }>()
   const [agreement, setAgreement] = useState<TenantAgreement | null | undefined>(undefined)
@@ -59,10 +56,8 @@ export function TenantAgreementPage() {
       if (listingId) {
         const detail = await getListing(listingId).catch(() => null)
         if (detail) {
-          const rent = detail.priceAmount ?? mapped.totalAmount
-          const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
-          const caution = detail.cautionFeeAmount ?? 0
-          mapped.totalAmount = rent + commission + LAWYER_REVIEW_FEE + caution
+          // Backend already provides the correct totalAmount (rent + caution + realHouseFee + agentFee)
+          // in leaseToTenantAgreement via the API totalAmount field. No client-side fee additions needed.
           mapped.propertyTitle = detail.title || mapped.propertyTitle
           mapped.propertyLocation = [detail.area, detail.city].filter(Boolean).join(', ') || mapped.propertyLocation
           if (detail.availableFrom) mapped.term = `Available from ${formatDate(detail.availableFrom)}`
@@ -87,6 +82,31 @@ export function TenantAgreementPage() {
   useEffect(() => {
     void loadAgreement()
   }, [loadAgreement])
+
+  // Handle payment callback redirect (?payment=success|failed&reference=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const payment = params.get('payment')
+    const error = params.get('error')
+
+    if (payment === 'success' || payment === 'failed') {
+      // Reload agreement to reflect the new escrow status
+      void loadAgreement()
+
+      // Show toast notification
+      if (payment === 'success') {
+        show('Payment successful — your escrow is now funded.')
+      } else {
+        show(`Payment was not successful${error ? `: ${error}` : ''}. You can retry from the agreement page.`)
+      }
+
+      // Clean up URL so refresh doesn't re-trigger the toast
+      const url = new URL(window.location.href)
+      url.searchParams.delete('payment')
+      url.searchParams.delete('error')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [loadAgreement, show])
 
   // The tenant can be waiting on the landlord's signature for an arbitrary amount of
   // time, so the signedParties snapshot taken at mount goes stale. Poll only while

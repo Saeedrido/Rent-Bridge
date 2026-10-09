@@ -11,9 +11,6 @@ import { listCallerLeases } from '../../../services/api/leaseApi'
 import { getListing } from '../../../services/api/listingApi'
 import { pendingActionForLease } from './PendingAgreementBanner'
 
-const PLATFORM_COMMISSION_RATE = 0.05
-const LAWYER_REVIEW_FEE = 45000
-
 interface AgreementMoney {
   leaseId: string
   title: string
@@ -108,13 +105,15 @@ export function TenantPaymentsPage() {
         const detail = details[index].status === 'fulfilled' ? details[index].value : null
         const rent = detail?.priceAmount ?? 0
         const caution = detail?.cautionFeeAmount ?? 0
-        const commission = Math.round(rent * PLATFORM_COMMISSION_RATE)
+        const realHouseFee = detail?.realHouseFeeAmount ?? 0
+        const agentFee = detail?.agentFeeAmount ?? 0
+        const total = rent + caution + realHouseFee + agentFee
         const stage = readStage(lease)
         return {
           leaseId: String(lease.id),
           title: detail?.title || String((lease as Record<string, unknown>).listingTitle ?? 'Tenancy'),
           location: [detail?.area, detail?.city].filter(Boolean).join(', '),
-          total: rent + commission + LAWYER_REVIEW_FEE + caution,
+          total,
           stage: stage.stage,
           stageLabel: stage.label,
           needsTenant: Boolean(pendingActionForLease(lease)),

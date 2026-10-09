@@ -156,9 +156,10 @@ function readBaths(item: Row): number {
 }
 
 function readAmenities(item: Row): string[] {
-  return arrayValue(item.amenities)
+  const amenities = arrayValue(item.amenities ?? item.Amenities)
     .map((entry) => text(entry))
     .filter(Boolean)
+  return amenities
 }
 
 function readLandlord(item: Row): Property['landlord'] {
@@ -419,6 +420,9 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
       message: clause.note as string,
       proposedEdit: clause.proposedEdit,
     }))
+  // Use totalAmount from API response if available (includes all fees: caution, real house fee, agent fee)
+  // Otherwise fall back to priceAmount (annual rent only)
+  const totalAmount = optionalNumber(item.totalAmount) ?? readPrice(item)
   return {
     id: text(item.id) || text(item.leaseId),
     propertyId: text(item.listingId ?? listing.id ?? property.id),
@@ -444,7 +448,7 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
     },
     clauses,
     feedback,
-    totalAmount: readPrice(item),
+    totalAmount,
     tenantName: text(tenant.name ?? item.tenantName) || undefined,
   } as TenantAgreement
 }

@@ -104,7 +104,16 @@ export async function signLease(leaseId: string, payload: SignAgreementPayload =
   return apiPost(`/leases/${leaseId}/sign`, payload)
 }
 
-export async function fundEscrow(leaseId: string): Promise<{ checkoutUrl?: string; url?: string; reference?: string }> {
+export interface FundEscrowResponse {
+  checkoutUrl?: string
+  url?: string
+  reference?: string
+  status?: string
+  totalAmount?: number
+  currency?: string
+}
+
+export async function fundEscrow(leaseId: string): Promise<FundEscrowResponse> {
   return apiPost(`/leases/${leaseId}/escrow/fund`)
 }
 
