@@ -21,7 +21,7 @@ export function roleDashboardPath(roleId: string): string {
 export function currentRoleId(): string {
   const user = getUser()
   const role =
-    user?.role?.trim().toLowerCase() || sessionStorage.getItem('rb:role')?.trim().toLowerCase() || ''
+    user?.role?.trim().toLowerCase() || localStorage.getItem('rb:role')?.trim().toLowerCase() || ''
   switch (role) {
     case 'landlord':
       return 'landlord'

@@ -24,8 +24,8 @@ export function DashboardHeader() {
   ]
 
   useEffect(() => {
-    const storedName = sessionStorage.getItem('rb:username')
-    const storedRole = sessionStorage.getItem('rb:role')
+    const storedName = localStorage.getItem('rb:username')
+    const storedRole = localStorage.getItem('rb:role')
     const auth = getUser()
     setUser({
       name: storedName || auth?.name || auth?.email?.split('@')[0] || '',

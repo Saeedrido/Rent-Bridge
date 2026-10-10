@@ -104,22 +104,39 @@ export function TenantAgreementPage() {
     const payment = params.get('payment')
     const error = params.get('error')
 
-    if (payment === 'success' || payment === 'failed') {
-      // Reload agreement to reflect the new escrow status
-      void loadAgreement()
+    if (payment !== 'success' && payment !== 'failed') return
 
-      // Show toast notification
-      if (payment === 'success') {
-        show('Payment successful — your escrow is now funded.')
-      } else {
-        show(`Payment was not successful${error ? `: ${error}` : ''}. You can retry from the agreement page.`)
-      }
+    let cancelled = false
+    let timer: number | undefined
 
-      // Clean up URL so refresh doesn't re-trigger the toast
-      const url = new URL(window.location.href)
-      url.searchParams.delete('payment')
-      url.searchParams.delete('error')
-      window.history.replaceState({}, '', url.toString())
+    // Paystack's browser redirect can arrive before its webhook has marked the
+    // lease funded, so reload immediately and then poll briefly until
+    // escrowFunded flips — that is what disables the pay-to-escrow action.
+    let attempts = 0
+    const refreshUntilFunded = async () => {
+      const fresh = await loadAgreement()
+      attempts += 1
+      if (cancelled || fresh?.escrowFunded || attempts >= 6) return
+      timer = window.setTimeout(refreshUntilFunded, 2500)
+    }
+    void refreshUntilFunded()
+
+    if (payment === 'success') {
+      show('Payment successful — your escrow is now funded.')
+    } else {
+      show(`Payment was not successful${error ? `: ${error}` : ''}. You can retry from the agreement page.`)
+    }
+
+    // Clean up URL so refresh doesn't re-trigger the toast
+    const url = new URL(window.location.href)
+    url.searchParams.delete('payment')
+    url.searchParams.delete('error')
+    url.searchParams.delete('leaseId')
+    window.history.replaceState({}, '', url.toString())
+
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
     }
   }, [loadAgreement, show])
 
@@ -533,15 +550,17 @@ export function TenantAgreementPage() {
             <button
               className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
               onClick={handleAcceptAndPay}
-              disabled={agreement.status !== 'awaiting-tenant' || submitting}
+              disabled={agreement.status !== 'awaiting-tenant' || submitting || agreement.escrowFunded}
             >
-              {agreement.status === 'signed'
-                ? 'Agreement Signed'
-                : agreement.status === 'draft' || agreement.status === 'lawyer-review'
-                  ? 'Awaiting lawyer review'
-                  : submitting
-                    ? 'Accepting…'
-                    : 'Accept & pay into escrow'}
+              {agreement.escrowFunded
+                ? 'Payment complete'
+                : agreement.status === 'signed'
+                  ? 'Agreement Signed'
+                  : agreement.status === 'draft' || agreement.status === 'lawyer-review'
+                    ? 'Awaiting lawyer review'
+                    : submitting
+                      ? 'Accepting…'
+                      : 'Accept & pay into escrow'}
             </button>
             <p className="text-center text-sm text-mist">
               Nothing is payable until a lawyer has reviewed your agreement.
@@ -646,18 +665,20 @@ export function TenantAgreementPage() {
               )}
               <button
                 onClick={handleAcceptAndPay}
-                disabled={submitting}
+                disabled={submitting || agreement.escrowFunded}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
               >
-                {submitting
-                  ? 'Working…'
-                  : tenantSigned
-                    ? landlordSigned
-                      ? 'Pay into escrow'
-                      : 'Waiting for landlord'
-                    : landlordSigned
-                      ? 'Accept & pay into escrow'
-                      : 'Sign agreement'}
+                {agreement.escrowFunded
+                  ? 'Paid into escrow'
+                  : submitting
+                    ? 'Working…'
+                    : tenantSigned
+                      ? landlordSigned
+                        ? 'Pay into escrow'
+                        : 'Waiting for landlord'
+                      : landlordSigned
+                        ? 'Accept & pay into escrow'
+                        : 'Sign agreement'}
               </button>
             </div>
           )}

@@ -14,9 +14,12 @@ const ACCESS_KEY = 'rb:accessToken'
 const REFRESH_KEY = 'rb:refreshToken'
 const USER_KEY = 'rb:user'
 
+// Persist across tabs: Paystack checkout opens in a new tab
+// (window.open(..., '_blank')), and sessionStorage is per-tab, so the payment
+// return tab had no token and RequireAuth bounced the payer to /login.
 function read(key: string): string | null {
   try {
-    return sessionStorage.getItem(key)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
@@ -24,8 +27,8 @@ function read(key: string): string | null {
 
 function write(key: string, value: string | null) {
   try {
-    if (value) sessionStorage.setItem(key, value)
-    else sessionStorage.removeItem(key)
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
   } catch {
     /* noop */
   }

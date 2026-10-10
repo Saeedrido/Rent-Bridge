@@ -141,7 +141,7 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
 export async function logoutUser(): Promise<void> {
   const refreshToken = (() => {
     try {
-      return sessionStorage.getItem('rb:refreshToken')
+      return localStorage.getItem('rb:refreshToken')
     } catch {
       return null
     }
@@ -156,9 +156,9 @@ export async function logoutUser(): Promise<void> {
 
 function clearStoredAuth() {
   try {
-    sessionStorage.removeItem('rb:accessToken')
-    sessionStorage.removeItem('rb:refreshToken')
-    sessionStorage.removeItem('rb:user')
+    localStorage.removeItem('rb:accessToken')
+    localStorage.removeItem('rb:refreshToken')
+    localStorage.removeItem('rb:user')
   } catch {
     /* noop */
   }
