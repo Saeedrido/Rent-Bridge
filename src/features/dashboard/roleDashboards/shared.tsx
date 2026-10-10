@@ -183,6 +183,7 @@ export type PillTone =
   | 'unpublished'
   | 'pending'
   | 'confirmed'
+  | 'reschedule'
   | 'completed'
   | 'declined'
   | 'draft'
@@ -201,6 +202,8 @@ const pillTones: Record<PillTone, string> = {
   unpublished: 'bg-[#3F4753]/90 text-white',
   pending: 'bg-[#EDEFF2] text-[#495057]',
   confirmed: 'bg-[#E2EFE6] text-forest',
+  // The tenant has proposed a new date; needs the landlord's decision.
+  reschedule: 'bg-[#FEF3C7] text-[#B45309]',
   // Stronger than 'confirmed': the inspection actually happened, which is what
   // releases escrow.
   completed: 'bg-forest text-white',

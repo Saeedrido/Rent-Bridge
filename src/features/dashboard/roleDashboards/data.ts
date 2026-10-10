@@ -4,6 +4,7 @@ export interface ManagedProperty {
   title: string
   location: string
   rent: number
+  rentFrequency?: 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
   beds: number
   baths: number
   typeLabel: string
@@ -18,11 +19,15 @@ export interface InspectionRequest {
   tenant: string
   propertyId: string
   slot: string
-  status: 'pending' | 'confirmed' | 'declined' | 'completed'
+  status: 'pending' | 'confirmed' | 'declined' | 'completed' | 'reschedule-requested'
   /** ISO date the inspection is booked for, when confirmed. */
   scheduledDate?: string
   /** ISO date the inspection actually happened, when completed. */
   actualDate?: string
+  /** Proposed new date when tenant requests reschedule (status: 'reschedule-requested'). */
+  proposedDate?: string
+  /** Optional note from tenant about why they want to reschedule. */
+  rescheduleNote?: string
 }
 
 export interface AgreementRecord {

@@ -129,16 +129,16 @@ export function PublishPropertyPage({ role }: { role: 'landlord' | 'caretaker' }
 
   const validateForm = (): string | null => {
     if (!formData.listingTitle || formData.listingTitle.trim().length < 3) {
-      return 'Listing title must be at least 3 characters.'
+      return 'Verification required: Listing title must be at least 3 characters.'
     }
     if (!formData.description || formData.description.trim().length < 10) {
-      return 'Description must be at least 10 characters.'
+      return 'Verification required: Description must be at least 10 characters.'
     }
     if (formData.description.length > MAX_DESCRIPTION_LENGTH) {
-      return `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`
+      return `Verification required: Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters.`
     }
     if (documents.length === 0) {
-      return 'Please attach at least one ownership document before publishing.'
+      return 'Verification required: Please attach at least one ownership document before publishing.'
     }
     return null
   }

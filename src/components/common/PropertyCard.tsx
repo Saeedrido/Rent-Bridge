@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { Property } from '../../features/properties/types/property'
 import { useFavorites } from '../../features/favorites/hooks/useFavorites'
-import { formatNaira } from '../../utils/format'
+import { formatNaira, rentFrequencyLabel } from '../../utils/format'
 import { PropertyImage } from './PropertyImage'
 
 function HeartIcon({ filled }: { filled: boolean }) {
@@ -48,7 +48,9 @@ export function PropertyCard({ property }: { property: Property }) {
         </h3>
         <div className="font-semibold text-ink text-[15px]">
           {formatNaira(property.price)}{' '}
-          {property.listingType === 'rent' && <span className="font-normal text-ink/60 text-[13px]">/ year</span>}
+          {property.listingType === 'rent' && (
+            <span className="font-normal text-ink/60 text-[13px]">{rentFrequencyLabel(property.rentFrequency)}</span>
+          )}
         </div>
         <div className="mt-3 flex items-center gap-4 text-ink/70 text-sm">
           <span>{property.beds} bd</span>

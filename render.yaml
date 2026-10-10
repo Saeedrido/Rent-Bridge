@@ -1,0 +1,24 @@
+# Render Blueprint for the Rent Bridge web client (Vite + react-router SPA).
+#
+# The app uses real (non-hash) URLs such as /login, /properties and
+# /dashboard/agreement/:id. A static host must serve index.html for any path it
+# does not have a file for, otherwise every deep link 404s before React can
+# route it. That is exactly what broke the Paystack return:
+#
+#   {WebBaseUrl}/dashboard/agreement/{leaseId}?payment=success&reference=...
+#
+# Paystack -> backend /api/payments/paystack/callback -> this URL, which Render
+# answered with its own "Not Found" (HTTP 404) because no rewrite rule existed.
+# The rewrite below is what makes client-side routing (and the payment return)
+# work. Existing files (e.g. /assets/*.js) are still served as-is; Render only
+# applies the rule when no resource exists at the requested path.
+services:
+  - type: web
+    name: rent-bridge
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

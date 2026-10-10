@@ -3,6 +3,7 @@ import { HeartIcon } from '../components/icons'
 import { PageHeading, EmptyState, useToast } from '../roleDashboards/shared'
 import type { SavedProperty } from './tenantData'
 import type { DashboardProperty } from '../../dashboard/data/dashboardProperties'
+import { rentFrequencyLabel } from '../../../utils/format'
 
 function shortDate(value: string): string {
   const date = new Date(value)
@@ -131,7 +132,7 @@ return (
                   </div>
                   <div className="mt-3 flex items-baseline gap-1">
                     <span className="text-[22px] font-bold text-ink">{property.price.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 })}</span>
-                    <span className="text-sm text-mist">/ year</span>
+                    <span className="text-sm text-mist">{rentFrequencyLabel(property.rentFrequency)}</span>
                   </div>
                   <div className="mt-2 text-sm text-mist">
                     {property.availableFrom

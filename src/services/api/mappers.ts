@@ -14,6 +14,7 @@ import type {
   LawyerApprovalStatus,
   TransactionPoint,
 } from '@/features/dashboard/roleDashboards/adminData'
+import { normalizeRentFrequency, rentFrequencyWord } from '@/utils/format'
 
 type Row = Record<string, unknown>
 
@@ -199,6 +200,7 @@ export function listingToProperty(raw: unknown): Property {
     city: city || 'Lagos',
     state: state || 'Lagos',
     price: readPrice(item),
+    rentFrequency: normalizeRentFrequency(item.rentFrequency),
     beds: readBeds(item),
     baths: readBaths(item),
     area: optionalNumber(item.areaSqm ?? item.areaSize),
@@ -237,6 +239,7 @@ export function listingToDashboardProperty(raw: unknown): DashboardProperty {
     location: property.location,
     title: property.title,
     price: property.price,
+    rentFrequency: property.rentFrequency,
     beds: property.beds,
     baths: property.baths,
     type: text(item.propertyType) || property.propertyType,
@@ -482,7 +485,7 @@ export function agreementPayloadToClauses(payload: unknown): AgreementClause[] {
     .filter((clause): clause is AgreementClause => clause !== null)
 }
 
-export function agreementTermsToClauses(payload: unknown): AgreementClause[] {
+export function agreementTermsToClauses(payload: unknown, rentFrequency?: unknown): AgreementClause[] {
   const envelope = asRow(payload)
   const terms = asRow(envelope.terms ?? payload)
   const tenant = asRow(terms.tenant)
@@ -513,7 +516,7 @@ export function agreementTermsToClauses(payload: unknown): AgreementClause[] {
     clauseContent.push({
       title: 'Term & Rent',
       content:
-        `The annual rent is ${rentLabel}, payable in advance into the platform escrow account.` +
+        `The rent is ${rentLabel}, payable ${rentFrequencyWord(rentFrequency)} in advance into the platform escrow account.` +
         (scheduled ? ` The inspection is scheduled for ${formatDate(scheduled)}.` : ''),
     })
   }
@@ -584,6 +587,7 @@ export function propertyToDashboardProperty(property: Property): DashboardProper
     location: property.location,
     title: property.title,
     price: property.price,
+    rentFrequency: property.rentFrequency,
     beds: property.beds,
     baths: property.baths,
     type: property.propertyType,
@@ -617,17 +621,26 @@ export function leaseToInspectionRequest(raw: unknown): InspectionRequest | null
         ? `${formatShortDate(preferred)} · requested`
         : 'Awaiting schedule'
 
+  const proposedDate = text(inspection.proposedDate)
+  const rescheduleNote = text(inspection.rescheduleNote)
+
   // 'completed' stays distinct from 'confirmed': only a completed inspection
   // has satisfied the escrow release gate, and the UI offers a different
-  // action for each.
+  // action for each. 'ReschedulePending' is its own state: the tenant has
+  // proposed a new date and the landlord must accept or reject it — NOT accept
+  // the original request. Mapping it to 'pending' used to show the Accept
+  // button, which fired begin+confirm and the server rejected with 400 because
+  // the inspection was already confirmed.
   const status: InspectionRequest['status'] =
     inspectionStatus === 'completed'
       ? 'completed'
       : inspectionStatus === 'confirmed'
         ? 'confirmed'
-        : inspectionStatus === 'pending' || inspectionStatus === 'reschedulepending'
-          ? 'pending'
-          : 'declined'
+        : inspectionStatus === 'reschedulepending'
+          ? 'reschedule-requested'
+          : inspectionStatus === 'pending'
+            ? 'pending'
+            : 'declined'
 
   return {
     id: text(item.leaseId ?? item.id),
@@ -637,6 +650,8 @@ export function leaseToInspectionRequest(raw: unknown): InspectionRequest | null
     status,
     scheduledDate: scheduled || undefined,
     actualDate: actual || undefined,
+    proposedDate: proposedDate || undefined,
+    rescheduleNote: rescheduleNote || undefined,
   }
 }
 

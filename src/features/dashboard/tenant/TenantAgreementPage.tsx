@@ -45,22 +45,37 @@ export function TenantAgreementPage() {
     }
     try {
       const lease = await getLease(id)
+      const listingId = typeof lease.listingId === 'string' ? lease.listingId : undefined
+      const listingDetail = listingId ? await getListing(listingId).catch(() => null) : null
+
       let clauses: AgreementClause[] = []
       try {
-        clauses = agreementTermsToClauses(await getLeaseAgreement(id))
+        clauses = agreementTermsToClauses(
+          await getLeaseAgreement(id),
+          listingDetail?.rentFrequency,
+        )
       } catch {
         clauses = []
       }
       const mapped = leaseToTenantAgreement(lease, clauses)
-      const listingId = typeof lease.listingId === 'string' ? lease.listingId : undefined
-      if (listingId) {
-        const detail = await getListing(listingId).catch(() => null)
-        if (detail) {
-          // Backend already provides the correct totalAmount (rent + caution + realHouseFee + agentFee)
-          // in leaseToTenantAgreement via the API totalAmount field. No client-side fee additions needed.
-          mapped.propertyTitle = detail.title || mapped.propertyTitle
-          mapped.propertyLocation = [detail.area, detail.city].filter(Boolean).join(', ') || mapped.propertyLocation
-          if (detail.availableFrom) mapped.term = `Available from ${formatDate(detail.availableFrom)}`
+      if (listingDetail) {
+        // Backend already provides the correct totalAmount (rent + caution + realHouseFee + agentFee)
+        // in leaseToTenantAgreement via the API totalAmount field. No client-side fee additions needed.
+        mapped.propertyTitle = listingDetail.title || mapped.propertyTitle
+        mapped.propertyLocation = [listingDetail.area, listingDetail.city].filter(Boolean).join(', ') || mapped.propertyLocation
+        if (listingDetail.availableFrom) mapped.term = `Available from ${formatDate(listingDetail.availableFrom)}`
+        // The deployed API only reports LeaseDetailResponse.totalAmount once an
+        // escrow payment exists, so TOTAL TO PAY read ₦0 for any unpaid agreement
+        // even though the property page already showed the real package. Fall back
+        // to recomputing it from the listing detail (the same formula the backend
+        // uses and TenantPaymentsPage shows) so the card is never zero.
+        const packageTotal =
+          (listingDetail.priceAmount ?? 0) +
+          (listingDetail.cautionFeeAmount ?? 0) +
+          (listingDetail.realHouseFeeAmount ?? 0) +
+          (listingDetail.agentFeeAmount ?? 0)
+        if (!mapped.totalAmount && packageTotal > 0) {
+          mapped.totalAmount = packageTotal
         }
       }
       setAgreement(mapped)

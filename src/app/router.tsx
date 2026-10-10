@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate, useLocation, useParams } from 'react-router-dom'
 import { App } from './App'
 import { AuthPage } from '../features/authentication/components/AuthPage'
 import { RoleSelectionPage } from '../features/authentication/components/RoleSelectionPage'
@@ -21,6 +21,19 @@ const SuspenseWrapper = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<Spinner className="h-8 w-8" />}>{children}</Suspense>
 )
 
+/**
+ * Paystack sends the payer back to {WebBaseUrl}/agreements/{leaseId}?payment=...
+ * (PaymentsController.Callback). The real screen lives at
+ * /dashboard/agreement/:id, so forward the query (payment=success, reference,
+ * error) onto it — otherwise the payment return landed on the not-found page.
+ */
+const PaymentReturnRedirect = () => {
+  const { id } = useParams()
+  const { search } = useLocation()
+  const target = id ? `/dashboard/agreement/${id}` : '/dashboard'
+  return <Navigate to={`${target}${search}`} replace />
+}
+
 const HomePage = lazy(() => import('../pages/Home/HomePage'))
 const PropertiesPage = lazy(() => import('../pages/Properties/PropertiesPage'))
 const PropertyDetailsPage = lazy(() => import('../pages/PropertyDetails/PropertyDetailsPage'))
@@ -41,6 +54,9 @@ export const router = createBrowserRouter([
       { path: 'buy', element: <SuspenseWrapper><BuyPage /></SuspenseWrapper> },
       { path: 'rent', element: <SuspenseWrapper><RentPage /></SuspenseWrapper> },
       { path: 'favorites', element: <SuspenseWrapper><FavoritesPage /></SuspenseWrapper> },
+      // Payment-return alias for /agreements and /agreements/:id (see above).
+      { path: 'agreements', element: <PaymentReturnRedirect /> },
+      { path: 'agreements/:id', element: <PaymentReturnRedirect /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

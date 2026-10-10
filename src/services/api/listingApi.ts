@@ -12,6 +12,16 @@ export type ListingTypeValue = 'rent' | 'sale'
 export type PaymentPlanValue = 'outright' | 'installment'
 export type RentFrequencyValue = 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
 
+/**
+ * The backend deserializes RentFrequency as enum names ("SemiAnnually").
+ * The hyphen in the kebab-case client value would fail binding, so send the
+ * PascalCase name instead (matching the mobile app).
+ */
+function toEnumRentFrequency(value?: RentFrequencyValue): string | undefined {
+  if (!value) return undefined
+  return value.charAt(0).toUpperCase() + value.slice(1).replace('-', '')
+}
+
 export interface CreateListingPayload {
   propertyId: string
   title?: string
@@ -81,7 +91,11 @@ export interface ListingDetail extends ListingRecord {
 }
 
 export async function createListing(payload: CreateListingPayload): Promise<ListingRecord & { id: string }> {
-  const record = (await apiPost<unknown>('/listings', payload)) as Partial<ListingRecord> & { listingId?: string }
+  const body = {
+    ...payload,
+    rentFrequency: toEnumRentFrequency(payload.rentFrequency),
+  }
+  const record = (await apiPost<unknown>('/listings', body)) as Partial<ListingRecord> & { listingId?: string }
   return { ...record, id: String(record.id ?? record.listingId ?? '') }
 }
 

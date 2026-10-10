@@ -1,6 +1,6 @@
 import type { Property } from '../types/property'
 import { Badge } from '../../../components/ui'
-import { formatNaira } from '../../../utils/format'
+import { formatNaira, rentFrequencyLabel } from '../../../utils/format'
 
 export function PropertyHeader({ property }: { property: Property }) {
   return (
@@ -16,7 +16,9 @@ export function PropertyHeader({ property }: { property: Property }) {
       <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2 text-ink">
         <span className="text-2xl font-bold">
           {formatNaira(property.price)}
-          {property.listingType === 'rent' && <span className="text-base font-normal text-ink/60"> / year</span>}
+          {property.listingType === 'rent' && (
+            <span className="text-base font-normal text-ink/60"> {rentFrequencyLabel(property.rentFrequency)}</span>
+          )}
         </span>
         <span className="text-sm">{property.beds} bedrooms</span>
         <span className="text-sm">{property.baths} bathrooms</span>

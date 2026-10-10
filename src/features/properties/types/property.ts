@@ -1,5 +1,7 @@
 export type ListingType = 'rent' | 'sale'
 
+export type RentFrequency = 'monthly' | 'quarterly' | 'semi-annually' | 'annually'
+
 export type PropertyType = 'flat' | 'apartment' | 'house' | 'mini-flat' | 'duplex' | 'studio'
 
 export interface PropertyImage {
@@ -31,6 +33,7 @@ export interface Property {
   beds: number
   baths: number
   area?: number
+  rentFrequency?: RentFrequency
   verified: boolean
   description: string
   amenities: string[]

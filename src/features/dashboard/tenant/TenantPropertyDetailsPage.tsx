@@ -5,6 +5,7 @@ import { PropertyGallerySkeleton } from '../../../components/ui'
 import type { DashboardProperty } from '../../../features/dashboard/data/dashboardProperties'
 import { propertyService } from '../../../features/properties/services/propertyService'
 import { propertyToDashboardProperty, isUuid, formatDate } from '../../../services/api/mappers'
+import { rentFrequencyLabel } from '../../../utils/format'
 import { getListing } from '../../../services/api/listingApi'
 import { createLease, requestInspection } from '../../../services/api/leaseApi'
 import { apiErrorMessage } from '../../../services/api/fallback'
@@ -459,8 +460,11 @@ const featuredRef = useRef<HTMLDivElement>(null)
             <div className="lg:sticky lg:top-24 lg:self-start">
               <div className="rounded-xl border border-sage bg-white p-6 space-y-6">
                 <div className="border-b border-sage pb-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-forest">ANNUAL RENT</p>
-                  <p className="mt-2 font-serif text-4xl font-bold text-forest">{formatPrice(property.price)}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-forest">RENT</p>
+                  <p className="mt-2 font-serif text-4xl font-bold text-forest">
+                    {formatPrice(property.price)}
+                    <span className="ml-2 text-lg font-normal text-mist">{rentFrequencyLabel(property.rentFrequency)}</span>
+                  </p>
                 </div>
 
                 <div className="space-y-3">

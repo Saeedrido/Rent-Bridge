@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { formatNaira } from '../../../utils/format'
+import { formatNaira, rentFrequencyLabel } from '../../../utils/format'
 import type { DashboardProperty } from '../data/dashboardProperties'
 import { CheckIcon, HeartIcon } from './icons'
 import { cn } from '../../../utils/cn'
@@ -55,11 +55,8 @@ export function PropertyCard({ property, isSaved = false, onToggleSave }: Proper
           <div className="text-[15px] font-semibold text-ink">
             {formatNaira(property.price)}{' '}
             <span className="text-[13px] font-normal text-ink/60">
-              {property.rentFrequency === 'monthly' ? '/ month'
-                : property.rentFrequency === 'quarterly' ? '/ quarter'
-                : property.rentFrequency === 'semi-annually' ? '/ 6 months'
-                : '/ year'}
-              </span>
+              {rentFrequencyLabel(property.rentFrequency)}
+            </span>
           </div>
           <div className="my-3 h-px w-full bg-green/10" />
           <div className="flex items-center gap-4 text-sm text-ink/70">

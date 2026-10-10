@@ -20,6 +20,7 @@ import {
   PaymentRecord,
 } from './data'
 import { naira } from './data'
+import { normalizeRentFrequency, rentFrequencyLabel } from '../../../utils/format'
 import { getMyProperties, type PropertyRecord, submitPropertyForReview, deleteProperty } from '../../../services/api/propertyApi'
 import {
   searchListings,
@@ -39,6 +40,8 @@ import {
   moveToLegalReview,
   signLease,
   getLeaseAgreementPdf,
+  confirmInspectionReschedule,
+  rejectInspectionReschedule,
 } from '../../../services/api/leaseApi'
 import { getTransactions } from '../../../services/api/dashboardApi'
 import { loadWithFallback, apiErrorMessage } from '../../../services/api/fallback'
@@ -68,7 +71,7 @@ function toDateInputValue(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caretaker' }) {
+export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caretaker' }): JSX.Element {
   const navigate = useNavigate()
   const authUser = getUser()
 
@@ -344,6 +347,36 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
     show('Inspection declined')
   }
 
+  const handleConfirmReschedule = async (id: string) => {
+    if (!isUuid(id)) {
+      show('This inspection is not linked to a lease yet.')
+      return
+    }
+    try {
+      await confirmInspectionReschedule(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not confirm reschedule right now.')
+      return
+    }
+    setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
+    show('Reschedule confirmed')
+  }
+
+  const handleRejectReschedule = async (id: string) => {
+    if (!isUuid(id)) {
+      show('This inspection is not linked to a lease yet.')
+      return
+    }
+    try {
+      await rejectInspectionReschedule(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not reject reschedule right now.')
+      return
+    }
+    setInspections((prev) => prev.map((i) => (i.id === id ? { ...i, status: 'confirmed' as const } : i)))
+    show('Reschedule rejected')
+  }
+
   const handleSendAgreement = async (id: string) => {
     if (isUuid(id)) {
       try {
@@ -549,7 +582,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                         </h3>
                         <div className="mt-2 flex items-baseline gap-1">
                           <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
-                          <span className="text-sm text-mist">/ year</span>
+                          <span className="text-sm text-mist">{rentFrequencyLabel(prop.rentFrequency)}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist">
                           <span className="capitalize">{prop.typeLabel}</span>
@@ -661,16 +694,38 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                         <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-mist">
                           <ClockIcon /> {insp.slot}
                         </p>
+                        {insp.status === 'reschedule-requested' && (
+                          <p className="mt-1 flex flex-wrap items-center gap-1 text-sm text-flame">
+                            <ClockIcon className="w-4 h-4 shrink-0" />
+                            {insp.proposedDate ? (
+                              <>
+                                <span>Tenant proposed</span>
+                                <strong>
+                                  {new Date(insp.proposedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </strong>
+                                {insp.scheduledDate && (
+                                  <span className="text-mist">
+                                    (currently {new Date(insp.scheduledDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })})
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span>Tenant requested to reschedule this inspection.</span>
+                            )}
+                            {insp.rescheduleNote && <span className="text-mist">— {insp.rescheduleNote}</span>}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <StatusPill
                           tone={
                             insp.status === 'pending' ? 'pending' :
                             insp.status === 'confirmed' ? 'confirmed' :
+                            insp.status === 'reschedule-requested' ? 'reschedule' :
                             insp.status === 'completed' ? 'completed' : 'declined'
                           }
                         >
-                          {insp.status}
+                          {insp.status === 'reschedule-requested' ? 'reschedule' : insp.status}
                         </StatusPill>
                         {insp.status === 'pending' && (
                           <>
@@ -687,6 +742,24 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                               className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-3.5 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
                             >
                               Decline
+                            </button>
+                          </>
+                        )}
+                        {insp.status === 'reschedule-requested' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmReschedule(insp.id)}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectReschedule(insp.id)}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg border border-flame/30 bg-white px-3.5 py-2 text-sm font-semibold text-flame transition-colors hover:border-flame hover:bg-flame-soft"
+                            >
+                              Reject
                             </button>
                           </>
                         )}
@@ -968,6 +1041,7 @@ function propertyFromListing(l: ListingRecord | undefined, prop: PropertyRecord 
   const location = [street, area, city, state].filter(Boolean).join(', ')
   const title = propType || 'Untitled property'
   const rent = num(l?.priceAmount ?? prop?.price)
+  const rentFrequency = normalizeRentFrequency(l?.rentFrequency)
   // Use property images first, then listing images, then fallback
   const propImages = prop?.Images ?? prop?.images ?? []
   const listingImages = l?.ImageUrls ?? l?.imageUrls ?? []
@@ -984,6 +1058,7 @@ function propertyFromListing(l: ListingRecord | undefined, prop: PropertyRecord 
     title,
     location,
     rent,
+    rentFrequency,
     beds,
     baths,
     typeLabel: propType,
@@ -998,3 +1073,4 @@ function num(value: unknown): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
 }
+

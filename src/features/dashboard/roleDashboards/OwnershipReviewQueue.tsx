@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PageHeading, StatusPill, EmptyState, DataErrorBanner, useToast } from './shared'
 import { apiErrorMessage } from '../../../services/api/fallback'
+import { downloadDocumentFile } from '../../../utils/documentDownload'
 import {
   getPropertyReviews,
   startDocumentReview,
@@ -256,6 +257,8 @@ function ReviewCard({
 }) {
   const property = record.property
   const allDocsVerified = record.documents.length > 0 && record.documents.every((d) => d.status === 'Verified')
+  const { show } = useToast()
+  const [downloadingDoc, setDownloadingDoc] = useState<string | null>(null)
 
   return (
     <section className="rounded-xl border border-sage bg-white overflow-hidden">
@@ -291,24 +294,18 @@ function ReviewCard({
         <ul className="divide-y divide-sage-line">
           {record.documents.map((doc, index) => {
             const isRejecting = rejectTarget?.propertyId === property.propertyId && rejectTarget.documentId === doc.documentId
-            console.log('[DOC DEBUG] Document:', { documentId: doc.documentId, fileKey: doc.fileKey, status: doc.status })
-            
-            const handleDownloadDocument = (e: React.MouseEvent) => {
-              e.preventDefault()
-              if (!doc.fileKey) return
-              // Add cache buster to bypass CDN cache and force download
-              const url = doc.fileKey + (doc.fileKey.includes('?') ? '&' : '?') + 't=' + Date.now() + '&download=1'
-              console.log('[DOC DEBUG] Downloading document:', url)
-              
-              // Create a temporary link to trigger download
-              const link = document.createElement('a')
-              link.href = url
-              link.download = `document-${doc.documentId.slice(0, 8)}`
-              link.target = '_blank'
-              link.rel = 'noopener,noreferrer'
-              document.body.appendChild(link)
-              link.click()
-              document.body.removeChild(link)
+            const isDownloading = downloadingDoc === doc.documentId
+
+            const handleDownloadDocument = async () => {
+              if (!doc.fileKey || isDownloading) return
+              setDownloadingDoc(doc.documentId)
+              try {
+                await downloadDocumentFile(doc.fileKey, `ownership-document-${index + 1}`)
+              } catch (err) {
+                show(apiErrorMessage(err) || 'Could not download this document right now.')
+              } finally {
+                setDownloadingDoc(null)
+              }
             }
             
             return (
@@ -322,13 +319,14 @@ function ReviewCard({
                       <p className="text-sm font-semibold text-ink truncate" title={doc.fileKey}>
                         Document {index + 1}
                         {doc.fileKey && (
-                          <a
-                            href="#"
+                          <button
+                            type="button"
                             onClick={handleDownloadDocument}
-                            className="ml-2 font-normal text-forest hover:underline"
+                            disabled={isDownloading}
+                            className="ml-2 font-normal text-forest hover:underline disabled:opacity-60"
                           >
-                            Download
-                          </a>
+                            {isDownloading ? 'Downloading…' : 'Download'}
+                          </button>
                         )}
                       </p>
                       <p className="text-xs text-mist mt-0.5">
