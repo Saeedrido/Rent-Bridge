@@ -4,7 +4,18 @@ import { ChevronRightIcon, AlertTriangleIcon, InfoIcon, ShieldCheckIcon, PenIcon
 import { PageHeading, StatusPill, cn, formatPrice, DataErrorBanner, useToast } from '../roleDashboards/shared'
 import { Spinner } from '../../../components/ui'
 import type { TenantAgreement, AgreementClause } from './tenantData'
-import { getLease, getLeaseAgreement, getLeaseAgreementPdf, signLease, fundEscrow } from '../../../services/api/leaseApi'
+import {
+  getLease,
+  getLeaseAgreement,
+  getLeaseAgreementPdf,
+  signLease,
+  fundEscrow,
+  downloadAgreementDocumentFile,
+  viewAgreementDocument,
+  uploadSignedAgreementDocument,
+  submitAgreementDocumentForReview,
+} from '../../../services/api/leaseApi'
+import { uploadFile } from '../../../services/api/uploadApi'
 import { agreementTermsToClauses, isUuid, leaseToTenantAgreement, formatDate } from '../../../services/api/mappers'
 import { apiErrorMessage } from '../../../services/api/fallback'
 import { getListing } from '../../../services/api/listingApi'
@@ -14,9 +25,11 @@ export function TenantAgreementPage() {
   const [agreement, setAgreement] = useState<TenantAgreement | null | undefined>(undefined)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [docBusy, setDocBusy] = useState(false)
   const { show } = useToast()
 
   const loadedOnce = useRef(false)
+  const signedInputRef = useRef<HTMLInputElement | null>(null)
 
   // Dev-only diagnostic. The signature roster, the pay gate and the pending banner
   // are all driven by lease.signedParties, and a stale or missing field there
@@ -140,22 +153,33 @@ export function TenantAgreementPage() {
     }
   }, [loadAgreement, show])
 
-  // The tenant can be waiting on the landlord's signature for an arbitrary amount of
-  // time, so the signedParties snapshot taken at mount goes stale. Poll only while
-  // a signature is genuinely outstanding, and pause while the tab is hidden.
+  // The tenant can be waiting on another party for an arbitrary amount of time, so
+  // the snapshot taken at mount goes stale. Poll only while something the tenant is
+  // waiting for is genuinely outstanding, and pause while the tab is hidden.
+  const docWaitingStatus = agreement
+    ? (agreement.statusRaw ?? '').toLowerCase()
+    : ''
   const waitingOnLandlord =
     agreement !== null &&
     agreement !== undefined &&
     agreement.status === 'awaiting-tenant' &&
     !agreement.signedParties.some((entry) => entry.toLowerCase() === 'landlord')
+  // Document flow: waiting on the lawyer to upload, the landlord to sign/return,
+  // the lawyer to approve the landlord, or the lawyer to approve the tenant.
+  const waitingOnDocFlow =
+    agreement !== null &&
+    agreement !== undefined &&
+    ['legal', 'landlordsigning', 'landlorddocinreview', 'tenantdocinreview'].some((s) =>
+      docWaitingStatus.includes(s),
+    )
 
   useEffect(() => {
-    if (!waitingOnLandlord) return
+    if (!waitingOnLandlord && !waitingOnDocFlow) return
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void loadAgreement()
     }, 15000)
     return () => clearInterval(timer)
-  }, [waitingOnLandlord, loadAgreement])
+  }, [waitingOnLandlord, waitingOnDocFlow, loadAgreement])
 
   if (agreement === undefined) {
     return (
@@ -178,6 +202,100 @@ export function TenantAgreementPage() {
     (source ?? agreement).signedParties.some((entry) => entry.toLowerCase() === party)
   const tenantSigned = hasSigned('tenant')
   const landlordSigned = hasSigned('landlord')
+
+  // Document-based signing flow. The lease uses it once the lawyer has uploaded
+  // the source document (or the lease status is one of the document statuses).
+  const progress = agreement.progress
+  const statusRaw = (agreement.statusRaw ?? '').toLowerCase()
+  const docFlow = Boolean(
+    progress &&
+      (progress.hasOriginalDocument ||
+        statusRaw.includes('signing') ||
+        statusRaw.includes('docinreview')),
+  )
+  type DocStage =
+    | 'preparing'
+    | 'landlord-signing'
+    | 'landlord-review'
+    | 'tenant-signing'
+    | 'tenant-review'
+    | 'payment'
+    | 'escrowed'
+  const docStage: DocStage = agreement.escrowFunded
+    ? 'escrowed'
+    : statusRaw.includes('fully')
+      ? 'payment'
+      : statusRaw.includes('tenantsigning')
+        ? 'tenant-signing'
+        : statusRaw.includes('tenantdocinreview')
+          ? 'tenant-review'
+          : statusRaw.includes('landlorddocinreview')
+            ? 'landlord-review'
+            : statusRaw.includes('landlordsigning')
+              ? 'landlord-signing'
+              : 'preparing'
+
+  const docStageLabel: Record<DocStage, string> = {
+    preparing: 'Awaiting lawyer',
+    'landlord-signing': 'Landlord signing',
+    'landlord-review': 'With lawyer',
+    'tenant-signing': 'Your signature needed',
+    'tenant-review': 'With lawyer',
+    payment: 'Payment due',
+    escrowed: 'In escrow',
+  }
+
+  const docSteps: { key: string; label: string; done: boolean; at?: string }[] = [
+    {
+      key: 'upload',
+      label: 'Lawyer uploads the agreement',
+      done: Boolean(progress?.hasOriginalDocument),
+      at: progress?.originalDocumentUploadedAt,
+    },
+    {
+      key: 'landlord-sign',
+      label: 'Landlord signs their copy',
+      done: Boolean(progress?.landlord.submitted || progress?.landlord.approved),
+      at: progress?.landlord.submittedAt ?? progress?.landlord.uploadedAt,
+    },
+    {
+      key: 'landlord-approve',
+      label: 'Lawyer approves the landlord\u2019s copy',
+      done: Boolean(progress?.landlord.approved),
+      at: progress?.landlord.approvedAt,
+    },
+    {
+      key: 'tenant-sign',
+      label: 'You download, sign and return your copy',
+      done: Boolean(progress?.tenant.submitted || progress?.tenant.approved),
+      at: progress?.tenant.submittedAt ?? progress?.tenant.uploadedAt,
+    },
+    {
+      key: 'tenant-approve',
+      label: 'Lawyer approves your copy',
+      done: Boolean(progress?.tenant.approved),
+      at: progress?.tenant.approvedAt,
+    },
+  ]
+
+  const handlePayEscrow = async () => {
+    if (!id || submitting) return
+    setSubmitting(true)
+    try {
+      const res = await fundEscrow(id)
+      const url = res.checkoutUrl ?? res.url
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        show('Opening secure checkout for your escrow payment.')
+      } else {
+        show('Checkout is being prepared — see the Payments tab.')
+      }
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not start your payment right now.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const handleAcceptAndPay = async () => {
     if (!id || submitting) return
@@ -254,6 +372,64 @@ export function TenantAgreementPage() {
       URL.revokeObjectURL(url)
     } catch {
       show('Could not download the agreement PDF right now.')
+    }
+  }
+
+  // ---- Document-based signing flow (web) ----
+
+  const handleDownloadSigned = async () => {
+    if (!id || docBusy) return
+    setDocBusy(true)
+    try {
+      await downloadAgreementDocumentFile(id, `agreement-${id.slice(0, 8)}.pdf`)
+      await loadAgreement()
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not download the agreement document right now.')
+    } finally {
+      setDocBusy(false)
+    }
+  }
+
+  const handleViewAgreement = async () => {
+    if (!id || docBusy) return
+    setDocBusy(true)
+    try {
+      await viewAgreementDocument(id)
+      await loadAgreement()
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not open the agreement document right now.')
+    } finally {
+      setDocBusy(false)
+    }
+  }
+
+  const handleSignedFilePicked = async (file: File | undefined) => {
+    if (!id || !file || docBusy) return
+    setDocBusy(true)
+    try {
+      const url = await uploadFile(file)
+      await uploadSignedAgreementDocument(id, { url, fileName: file.name })
+      await loadAgreement()
+      show('Signed copy uploaded. Send it to the lawyer when you are ready.')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not upload your signed copy right now.')
+    } finally {
+      setDocBusy(false)
+      if (signedInputRef.current) signedInputRef.current.value = ''
+    }
+  }
+
+  const handleSubmitSigned = async () => {
+    if (!id || docBusy) return
+    setDocBusy(true)
+    try {
+      await submitAgreementDocumentForReview(id)
+      await loadAgreement()
+      show('Sent to the lawyer for approval.')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not send your signed copy right now.')
+    } finally {
+      setDocBusy(false)
     }
   }
 
@@ -538,7 +714,177 @@ export function TenantAgreementPage() {
             )}
           </div>
 
+          {docFlow && (
+            <div className="rounded-xl border border-sage bg-white p-6 space-y-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-lg text-forest">Agreement signing</h3>
+                <StatusPill tone={docStage === 'escrowed' || docStage === 'payment' ? 'signed' : 'inreview'}>
+                  {docStageLabel[docStage].toUpperCase()}
+                </StatusPill>
+              </div>
+
+              {/* Status timeline — the tenant sees exactly how far the paper has travelled. */}
+              <ol className="space-y-3">
+                {docSteps.map((step) => (
+                  <li key={step.key} className="flex items-start gap-3">
+                    <span
+                      className={cn(
+                        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                        step.done ? 'bg-forest text-white' : 'border-2 border-sage text-sage',
+                      )}
+                    >
+                      {step.done ? '\u2713' : ''}
+                    </span>
+                    <div className="min-w-0">
+                      <p className={cn('text-sm', step.done ? 'text-forest' : 'text-mist')}>{step.label}</p>
+                      {step.done && step.at && (
+                        <p className="text-xs text-mist">{formatDate(step.at)}</p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              <div className="border-t border-sage pt-4">
+                {docStage === 'preparing' && (
+                  <p className="text-sm text-mist">
+                    Waiting for the lawyer to upload the agreement document. You will be able to
+                    download it as soon as it is ready.
+                  </p>
+                )}
+                {docStage === 'landlord-signing' && (
+                  <p className="text-sm text-mist">
+                    The agreement has been uploaded. Waiting for your landlord to download, sign and
+                    return their copy.
+                  </p>
+                )}
+                {docStage === 'landlord-review' && (
+                  <p className="text-sm text-mist">
+                    Your landlord has returned their signed copy. Waiting for the lawyer to approve
+                    it — you will be able to sign next.
+                  </p>
+                )}
+                {docStage === 'tenant-signing' && (
+                  <div className="space-y-3">
+                    {!progress?.tenant.downloaded ? (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSigned}
+                        disabled={docBusy}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+                      >
+                        {docBusy ? 'Opening…' : 'Download agreement to sign'}
+                      </button>
+                    ) : !progress?.tenant.uploaded ? (
+                      <>
+                        <p className="text-sm text-mist">
+                          Downloaded. Sign the agreement, then upload the signed copy.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => signedInputRef.current?.click()}
+                          disabled={docBusy}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+                        >
+                          {docBusy ? 'Uploading…' : 'Upload signed agreement'}
+                        </button>
+                      </>
+                    ) : !progress?.tenant.submitted ? (
+                      <>
+                        <p className="text-sm text-mist">
+                          Signed copy uploaded. Send it to the lawyer for approval.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <button
+                            type="button"
+                            onClick={handleSubmitSigned}
+                            disabled={docBusy}
+                            className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-6 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-forest/90 disabled:opacity-60"
+                          >
+                            {docBusy ? 'Sending…' : 'Send to lawyer'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => signedInputRef.current?.click()}
+                            disabled={docBusy}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-5 py-3.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-60"
+                          >
+                            Re-upload
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+                    {progress?.tenant.downloaded && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSigned}
+                        disabled={docBusy}
+                        className="text-sm text-forest underline decoration-forest/40 hover:decoration-forest"
+                      >
+                        Download again
+                      </button>
+                    )}
+                  </div>
+                )}
+                {docStage === 'tenant-review' && (
+                  <p className="text-sm text-mist">
+                    Your signed copy is with the lawyer for approval. Payment will open once it is
+                    approved.
+                  </p>
+                )}
+                {docStage === 'payment' && (
+                  <>
+                    <p className="text-sm text-mist mb-3">
+                      All parties have signed and the lawyer has approved. Complete your payment to
+                      hold it in escrow.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handlePayEscrow}
+                      disabled={submitting}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-6 py-4 text-[16px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-60"
+                    >
+                      {submitting ? 'Opening checkout…' : 'Pay into escrow'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleViewAgreement}
+                      disabled={docBusy}
+                      className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-3 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-60"
+                    >
+                      {docBusy ? 'Opening…' : 'View final agreement'}
+                    </button>
+                  </>
+                )}
+                {docStage === 'escrowed' && (
+                  <>
+                    <p className="text-sm text-forest">
+                      Your payment is held securely in escrow.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleViewAgreement}
+                      disabled={docBusy}
+                      className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-3 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-60"
+                    >
+                      {docBusy ? 'Opening…' : 'View final agreement'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <input
+                ref={signedInputRef}
+                type="file"
+                accept="application/pdf,image/*,.doc,.docx"
+                className="hidden"
+                onChange={(e) => void handleSignedFilePicked(e.target.files?.[0])}
+              />
+            </div>
+          )}
+
           {/* Primary CTA */}
+          {!docFlow && (
           <div className="rounded-xl border border-sage bg-white p-6 space-y-4">
             <div className="border-b border-sage pb-4">
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-forest">TOTAL TO PAY</p>
@@ -566,9 +912,10 @@ export function TenantAgreementPage() {
               Nothing is payable until a lawyer has reviewed your agreement.
             </p>
           </div>
+          )}
 
           {/* Agreement State - Signed */}
-          {agreement.status === 'signed' && (
+          {!docFlow && agreement.status === 'signed' && (
             <div className="rounded-xl border border-sage bg-white p-6 text-center">
               <ShieldCheckIcon className="w-12 h-12 mx-auto text-forest mb-3" />
               <h3 className="font-serif text-xl font-semibold text-forest mb-1">
@@ -601,7 +948,7 @@ export function TenantAgreementPage() {
             </div>
           )}
 
-          {agreement.status === 'draft' && (
+          {!docFlow && agreement.status === 'draft' && (
             <div className="rounded-xl border border-sage bg-white p-6 text-center">
               <svg className="w-12 h-12 mx-auto text-mist mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2H7a2 2 0 01-2-2v-6" />
@@ -611,7 +958,7 @@ export function TenantAgreementPage() {
             </div>
           )}
 
-          {agreement.status === 'awaiting-tenant' && (
+          {!docFlow && agreement.status === 'awaiting-tenant' && (
             <div className="rounded-xl border border-sage bg-white p-6">
               {/* Signature roster — the tenant is waiting on the other party here, so
                   showing who has actually signed is the difference between "stuck" and

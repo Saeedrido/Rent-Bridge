@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listCallerLeases } from '../../../services/api/leaseApi'
+import { readAgreementProgress } from '../../../services/api/mappers'
 import { AlertCircleIcon, ShieldCheckIcon } from '../components/icons'
 
 type PendingAction = {
@@ -20,6 +21,7 @@ const POLL_MS = 30000
 export function pendingActionForLease(lease: {
   status?: string
   signedParties?: unknown
+  agreement?: unknown
 }): PendingAction | null {
   const status = String(lease.status ?? '').toLowerCase()
   const parties = Array.isArray(lease.signedParties)
@@ -45,18 +47,37 @@ export function pendingActionForLease(lease: {
     }
   }
 
-  if (
-    (status.includes('certified') ||
-      status.includes('partial') ||
-      status.includes('awaitingsign')) &&
-    !tenantSigned
-  ) {
+  // Document-based signing flow: the tenant only acts once the lawyer has
+  // approved the landlord's signed copy (status TenantSigning).
+  if (status.includes('tenantsigning')) {
+    const progress = readAgreementProgress(lease)
+    if (progress?.tenant.submitted) return null
+    if (!progress?.tenant.downloaded) {
+      return {
+        leaseId: '',
+        kind: 'sign',
+        title: 'Your agreement is ready to sign',
+        detail:
+          'Your landlord has signed and the lawyer approved it. Download your copy, sign it and upload it back.',
+      }
+    }
     return {
       leaseId: '',
       kind: 'sign',
-      title: 'An agreement is waiting for your signature',
-      detail:
-        'Your lawyer has finished reviewing it. Sign to continue — payment opens once your landlord signs too.',
+      title: 'Finish signing your agreement',
+      detail: 'Upload your signed copy and send it to the lawyer for approval.',
+    }
+  }
+
+  if (status.includes('certified') || status.includes('partial') || status.includes('awaitingsign')) {
+    if (!tenantSigned) {
+      return {
+        leaseId: '',
+        kind: 'sign',
+        title: 'An agreement is waiting for your signature',
+        detail:
+          'Your lawyer has finished reviewing it. Sign to continue — payment opens once your landlord signs too.',
+      }
     }
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Seo } from '../../../components/common'
 import { HomeIcon, InspectionsIcon, AgreementIcon, PaymentsIcon, SearchIcon } from '../components/icons'
@@ -42,7 +42,12 @@ import {
   getLeaseAgreementPdf,
   confirmInspectionReschedule,
   rejectInspectionReschedule,
+  downloadAgreementDocumentFile,
+  viewAgreementDocument,
+  uploadSignedAgreementDocument,
+  submitAgreementDocumentForReview,
 } from '../../../services/api/leaseApi'
+import { uploadFile } from '../../../services/api/uploadApi'
 import { getTransactions } from '../../../services/api/dashboardApi'
 import { loadWithFallback, apiErrorMessage } from '../../../services/api/fallback'
 import {
@@ -60,6 +65,42 @@ const roleLabel = (role: 'landlord' | 'caretaker', verified: boolean) => {
 
 function notifTime(slot: string): string {
   return slot ? 'New' : 'Just now'
+}
+
+function agreementStatusLabel(status: AgreementRecord['status']): string {
+  switch (status) {
+    case 'draft':
+      return 'draft'
+    case 'with-lawyer':
+      return 'with lawyer'
+    case 'certified':
+      return 'awaiting signatures'
+    case 'partially-signed':
+      return 'partially signed'
+    case 'signed':
+      return 'signed'
+    case 'landlord-signing':
+      return 'waiting for you to sign'
+    case 'landlord-review':
+      return 'with lawyer'
+    case 'tenant-signing':
+      return 'waiting for tenant'
+    case 'tenant-review':
+      return 'with lawyer'
+    default:
+      return String(status).replace('-', ' ')
+  }
+}
+
+function agreementStatusTone(
+  status: AgreementRecord['status'],
+): 'draft' | 'withlawyer' | 'signed' | 'awaiting' {
+  if (status === 'draft') return 'draft'
+  if (status === 'signed') return 'signed'
+  if (status === 'with-lawyer' || status === 'landlord-review' || status === 'tenant-review') {
+    return 'withlawyer'
+  }
+  return 'awaiting'
 }
 
 // YYYY-MM-DD in the user's own timezone — what <input type="date"> uses and
@@ -94,6 +135,9 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
   const [inspections, setInspections] = useState<InspectionRequest[]>([])
   const [agreements, setAgreements] = useState<AgreementRecord[]>([])
   const [submittingAgreementId, setSubmittingAgreementId] = useState<string | null>(null)
+  const [agreementDocBusyId, setAgreementDocBusyId] = useState<string | null>(null)
+  const [signTargetId, setSignTargetId] = useState<string | null>(null)
+  const signedPickerRef = useRef<HTMLInputElement | null>(null)
   const [payments, setPayments] = useState<PaymentRecord[]>([])
 
   useEffect(() => {
@@ -164,6 +208,15 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
       active = false
     }
   }, [])
+
+  const loadAgreements = async () => {
+    const result = await loadWithFallback(
+      async () => (await listCallerLeases(1, 50)).map(leaseToAgreementRecord),
+      [] as AgreementRecord[],
+    )
+    setAgreements(result.data)
+    if (result.error) setLoadError(result.error)
+  }
 
   useEffect(() => {
     let active = true
@@ -434,6 +487,76 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
       }
     }
     show('Agreement PDF downloaded')
+  }
+
+  // ---- Document-based agreement flow (web) ----
+
+  const handleLandlordDownload = async (id: string) => {
+    if (!isUuid(id) || agreementDocBusyId === id) return
+    setAgreementDocBusyId(id)
+    try {
+      await downloadAgreementDocumentFile(id, `agreement-${id.slice(0, 8)}.pdf`)
+      await loadAgreements()
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not download the agreement document right now.')
+    } finally {
+      setAgreementDocBusyId(null)
+    }
+  }
+
+  const handleLandlordView = async (id: string) => {
+    if (!isUuid(id) || agreementDocBusyId === id) return
+    setAgreementDocBusyId(id)
+    try {
+      await viewAgreementDocument(id)
+      await loadAgreements()
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not open the agreement document right now.')
+    } finally {
+      setAgreementDocBusyId(null)
+    }
+  }
+
+  const openSignedPicker = (id: string) => {
+    if (!isUuid(id) || agreementDocBusyId === id) return
+    setSignTargetId(id)
+    signedPickerRef.current?.click()
+  }
+
+  const handleSignedFilePicked = async (file: File | undefined) => {
+    const id = signTargetId
+    if (!id || !file || agreementDocBusyId) {
+      if (signedPickerRef.current) signedPickerRef.current.value = ''
+      setSignTargetId(null)
+      return
+    }
+    setAgreementDocBusyId(id)
+    try {
+      const url = await uploadFile(file)
+      await uploadSignedAgreementDocument(id, { url, fileName: file.name })
+      await loadAgreements()
+      show('Signed copy uploaded. Send it to the lawyer when you are ready.')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not upload your signed copy right now.')
+    } finally {
+      setAgreementDocBusyId(null)
+      setSignTargetId(null)
+      if (signedPickerRef.current) signedPickerRef.current.value = ''
+    }
+  }
+
+  const handleSubmitSigned = async (id: string) => {
+    if (!isUuid(id) || agreementDocBusyId === id) return
+    setAgreementDocBusyId(id)
+    try {
+      await submitAgreementDocumentForReview(id)
+      await loadAgreements()
+      show('Sent to the lawyer for approval.')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not send your signed copy right now.')
+    } finally {
+      setAgreementDocBusyId(null)
+    }
   }
 
   const renderActionButtons = (prop: ManagedProperty, canSubmitForReview: boolean) => {
@@ -879,70 +1002,134 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                   body="Agreements will appear here when a tenant expresses interest in your listing."
                 />
               ) : (
-                agreements.map((ag) => (
-                  <div
-                    key={ag.id}
-                    className="flex flex-col gap-3 rounded-xl border border-sage bg-white p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                  >
-                    <div className="flex items-center gap-4">
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sage-soft text-forest">
-                        <SearchIcon />
-                      </span>
-                      <div>
-                        <p className="font-semibold text-[15px] text-ink">{ag.propertyTitle}</p>
-                        <p className="mt-0.5 text-sm text-mist">Tenant: {ag.tenant}</p>
-                        <p className="text-sm text-mist">Lawyer: {ag.lawyer}</p>
+                agreements.map((ag) => {
+                  const docFlow = Boolean(
+                    ag.progress &&
+                      (ag.progress.hasOriginalDocument ||
+                        ag.status.startsWith('landlord-') ||
+                        ag.status.startsWith('tenant-')),
+                  )
+                  const landlordProgress = ag.progress?.landlord
+                  const busy = agreementDocBusyId === ag.id
+                  return (
+                    <div
+                      key={ag.id}
+                      className="flex flex-col gap-3 rounded-xl border border-sage bg-white p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sage-soft text-forest">
+                          <SearchIcon />
+                        </span>
+                        <div>
+                          <p className="font-semibold text-[15px] text-ink">{ag.propertyTitle}</p>
+                          <p className="mt-0.5 text-sm text-mist">Tenant: {ag.tenant}</p>
+                          <p className="text-sm text-mist">Lawyer: {ag.lawyer}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <StatusPill tone={agreementStatusTone(ag.status)}>
+                          {agreementStatusLabel(ag.status)}
+                        </StatusPill>
+                        <p className="text-sm text-mist shrink-0">{ag.updated}</p>
+
+                        {docFlow ? (
+                          <>
+                            {ag.status === 'landlord-signing' &&
+                              (!landlordProgress?.downloaded ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleLandlordDownload(ag.id)}
+                                  disabled={busy}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <DownloadIcon /> {busy ? 'Opening…' : 'Download to sign'}
+                                </button>
+                              ) : !landlordProgress?.uploaded ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openSignedPicker(ag.id)}
+                                  disabled={busy}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {busy ? 'Uploading…' : 'Upload signed'}
+                                </button>
+                              ) : !landlordProgress?.submitted ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSubmitSigned(ag.id)}
+                                  disabled={busy}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {busy ? 'Sending…' : 'Send to lawyer'}
+                                </button>
+                              ) : (
+                                <span className="text-sm text-mist">With lawyer</span>
+                              ))}
+                            {ag.status === 'landlord-review' && (
+                              <span className="text-sm text-mist">Waiting for lawyer</span>
+                            )}
+                            {(ag.status === 'tenant-signing' ||
+                              ag.status === 'tenant-review' ||
+                              ag.status === 'signed') && (
+                              <button
+                                type="button"
+                                onClick={() => handleLandlordView(ag.id)}
+                                disabled={busy}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-50"
+                              >
+                                <DownloadIcon /> View agreement
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {ag.status === 'draft' && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendAgreement(ag.id)}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                              >
+                                Start Legal Review
+                              </button>
+                            )}
+                            {(ag.status === 'certified' || ag.status === 'partially-signed') && (
+                              <button
+                                type="button"
+                                onClick={() => handleSignAgreement(ag.id)}
+                                disabled={submittingAgreementId === ag.id || ag.signedParties.includes('Landlord')}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {submittingAgreementId === ag.id
+                                  ? 'Signing\u2026'
+                                  : ag.signedParties.includes('Landlord')
+                                    ? 'You signed'
+                                    : 'Sign agreement'}
+                              </button>
+                            )}
+                            {(ag.status === 'signed' || ag.status === 'partially-signed') && (
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadAgreement(ag.id)}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                              >
+                                <DownloadIcon /> Download
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <StatusPill
-                        tone={
-                          ag.status === 'draft' ? 'draft' :
-                          ag.status === 'with-lawyer' ? 'withlawyer' :
-                          ag.status === 'signed' ? 'signed' : 'awaiting'
-                        }
-                      >
-                        {ag.status === 'certified'
-                          ? 'awaiting signatures'
-                          : ag.status.replace('-', ' ')}
-                      </StatusPill>
-                      <p className="text-sm text-mist shrink-0">{ag.updated}</p>
-                      {ag.status === 'draft' && (
-                        <button
-                          type="button"
-                          onClick={() => handleSendAgreement(ag.id)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
-                        >
-                          Start Legal Review
-                        </button>
-                      )}
-                      {(ag.status === 'certified' || ag.status === 'partially-signed') && (
-                        <button
-                          type="button"
-                          onClick={() => handleSignAgreement(ag.id)}
-                          disabled={submittingAgreementId === ag.id || ag.signedParties.includes('Landlord')}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-forest/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {submittingAgreementId === ag.id
-                            ? 'Signing\u2026'
-                            : ag.signedParties.includes('Landlord')
-                              ? 'You signed'
-                              : 'Sign agreement'}
-                        </button>
-                      )}
-                      {(ag.status === 'signed' || ag.status === 'partially-signed') && (
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadAgreement(ag.id)}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
-                        >
-                          <DownloadIcon /> Download
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               )}
+
+              <input
+                ref={signedPickerRef}
+                type="file"
+                accept="application/pdf,image/*,.doc,.docx"
+                className="hidden"
+                onChange={(e) => void handleSignedFilePicked(e.target.files?.[0])}
+              />
             </div>
           </>
         )

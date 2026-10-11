@@ -35,10 +35,60 @@ export interface AgreementRecord {
   propertyTitle: string
   tenant: string
   lawyer: string
-  status: 'draft' | 'with-lawyer' | 'certified' | 'partially-signed' | 'signed'
+  status:
+    | 'draft'
+    | 'with-lawyer'
+    | 'certified'
+    | 'partially-signed'
+    | 'signed'
+    /** Document flow: lawyer uploaded, landlord is signing. */
+    | 'landlord-signing'
+    /** Document flow: landlord returned it, awaiting the lawyer. */
+    | 'landlord-review'
+    /** Document flow: landlord approved, tenant is signing. */
+    | 'tenant-signing'
+    /** Document flow: tenant returned it, awaiting the lawyer. */
+    | 'tenant-review'
   /** e.g. ['Tenant'] — parties that have already signed. */
   signedParties: string[]
   updated: string
+  /** Per-party document progress, when the lease uses the document flow. */
+  progress?: AgreementProgress
+}
+
+/** A single party's document-signing progress on a lease. */
+export interface AgreementReviewProgress {
+  party: string
+  downloaded: boolean
+  uploaded: boolean
+  submitted: boolean
+  approved: boolean
+  downloadedAt?: string
+  uploadedAt?: string
+  submittedAt?: string
+  approvedAt?: string
+  /** URL of the file the party uploaded (hosted). */
+  uploadedUrl?: string
+  uploadedFileName?: string
+}
+
+/**
+ * Document-based signing progress for a lease, as returned by the API on both
+ * the lease list and the lease/agreement detail. Every dashboard reads this so
+ * they cannot disagree about which step a lease is on.
+ */
+export interface AgreementProgress {
+  hasOriginalDocument: boolean
+  originalDocumentUrl?: string
+  originalDocumentFileName?: string
+  originalDocumentUploadedAt?: string
+  /** True once both parties signed and the lawyer approved — the final copy is retained. */
+  isFinalized: boolean
+  finalDocumentUrl?: string
+  finalDocumentFileName?: string
+  finalizedAt?: string
+  landlord: AgreementReviewProgress
+  tenant: AgreementReviewProgress
 }
 
 export interface PaymentRecord {

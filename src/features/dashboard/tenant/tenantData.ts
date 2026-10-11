@@ -1,4 +1,5 @@
 import type { DashboardProperty } from '../data/dashboardProperties'
+import type { AgreementProgress } from '../roleDashboards/data'
 
 export interface Inspection {
   id: string
@@ -65,6 +66,8 @@ export interface TenantAgreement {
   term: string
   date: string
   status: 'draft' | 'lawyer-review' | 'awaiting-tenant' | 'signed'
+  /** Raw backend lease status (e.g. 'LandlordSigning'), for the document flow. */
+  statusRaw: string
   /** Parties that have already signed, e.g. ['Landlord']. Drives the pay gate. */
   signedParties: string[]
   /** True once escrow money has actually been accepted for this lease. */
@@ -73,6 +76,8 @@ export interface TenantAgreement {
   clauses: AgreementClause[]
   feedback: AgreementFeedback[]
   totalAmount: number
+  /** Per-party document progress when the lease uses the document-signing flow. */
+  progress?: AgreementProgress
 }
 
 export function getAgreementStatus(status: string) {
@@ -83,6 +88,14 @@ export function getAgreementStatus(status: string) {
       return { tone: 'inreview' as const, label: 'LAWYER REVIEW' }
     case 'awaiting-tenant':
       return { tone: 'inreview' as const, label: 'AWAITING TENANT' }
+    case 'landlord-signing':
+      return { tone: 'inreview' as const, label: 'LANDLORD SIGNING' }
+    case 'landlord-review':
+      return { tone: 'inreview' as const, label: 'WITH LAWYER' }
+    case 'tenant-signing':
+      return { tone: 'inreview' as const, label: 'AWAITING YOUR SIGNATURE' }
+    case 'tenant-review':
+      return { tone: 'inreview' as const, label: 'WITH LAWYER' }
     case 'signed':
       return { tone: 'signed' as const, label: 'SIGNED' }
     default:

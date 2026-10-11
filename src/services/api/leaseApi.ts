@@ -1,5 +1,7 @@
-import { apiGet, apiPost, buildQuery } from './client'
+import { apiGet, apiPost, buildQuery, refreshAccessToken, ApiError, errorFromBody } from './client'
 import { extractArray, mapLeaseRecord } from './mappers'
+import { API_BASE_URL, API_PREFIX } from './config'
+import { getAccessToken } from './tokens'
 
 export interface CreateLeasePayload {
   listingId: string
@@ -102,6 +104,123 @@ export async function certifyLease(leaseId: string): Promise<void> {
 
 export async function signLease(leaseId: string, payload: SignAgreementPayload = {}): Promise<void> {
   return apiPost(`/leases/${leaseId}/sign`, payload)
+}
+
+/**
+ * Document-based signing flow.
+ *
+ * Documents are hosted first via POST /uploads (returns an HTTPS URL) and the
+ * URL is then attached to the lease. There is no multipart upload here.
+ */
+export interface AgreementDocumentPayload {
+  url: string
+  fileName?: string
+}
+
+/** The assigned lawyer attaches the agreement document for the landlord to sign. */
+export async function uploadAgreementDocument(leaseId: string, payload: AgreementDocumentPayload): Promise<void> {
+  return apiPost(`/leases/${leaseId}/agreement/document`, payload)
+}
+
+/**
+ * A party opens their copy. Records the download server-side and returns a
+ * short-lived signed URL. The landlord gets the lawyer's source document; the
+ * tenant gets the landlord-signed document.
+ */
+export async function downloadAgreementDocument(leaseId: string): Promise<string> {
+  const res = await apiPost<{ url?: string }>(`/leases/${leaseId}/agreement/document/download`)
+  return String(res?.url ?? '')
+}
+
+/** A party attaches their signed copy of the agreement. */
+export async function uploadSignedAgreementDocument(leaseId: string, payload: AgreementDocumentPayload): Promise<void> {
+  return apiPost(`/leases/${leaseId}/agreement/document/sign`, payload)
+}
+
+interface AgreementDocumentBlob {
+  blob: Blob
+  fileName?: string
+}
+
+function contentDispositionFileName(header: string | null): string | undefined {
+  if (!header) return undefined
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1])
+    } catch {
+      return utf8[1]
+    }
+  }
+  const ascii = /filename="?([^";]+)"?/i.exec(header)
+  return ascii ? ascii[1] : undefined
+}
+
+/**
+ * Streams the agreement bytes through our API so the disposition can be set
+ * server-side. Cloudinary serves raw files as attachments regardless of the
+ * link, so the browser cannot render them inline from the storage URL; proxying
+ * lets us view a PDF in the tab and honour a real download when asked.
+ */
+async function fetchAgreementDocumentBlob(leaseId: string, download: boolean): Promise<AgreementDocumentBlob> {
+  const url = `${API_BASE_URL}${API_PREFIX}/leases/${leaseId}/agreement/document/content${
+    download ? '?download=true' : ''
+  }`
+  let token = getAccessToken()
+  let response = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
+
+  if (response.status === 401) {
+    token = await refreshAccessToken()
+    if (token) {
+      response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    }
+  }
+
+  if (!response.ok) {
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(errorFromBody(body, `Could not load the agreement (${response.status})`), response.status)
+  }
+
+  const blob = await response.blob()
+  return { blob, fileName: contentDispositionFileName(response.headers.get('content-disposition')) }
+}
+
+/** Opens the agreement inline in a new tab so it renders instead of downloading. */
+export async function viewAgreementDocument(leaseId: string): Promise<void> {
+  const { blob } = await fetchAgreementDocumentBlob(leaseId, false)
+  const objectUrl = URL.createObjectURL(blob)
+  window.open(objectUrl, '_blank', 'noopener,noreferrer')
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+}
+
+/** Downloads the agreement as an attachment, preserving the original file name. */
+export async function downloadAgreementDocumentFile(leaseId: string, fallbackName = 'agreement.pdf'): Promise<void> {
+  const { blob, fileName } = await fetchAgreementDocumentBlob(leaseId, true)
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName || fallbackName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+}
+
+/** A party sends their signed copy to the assigned lawyer for review. */
+export async function submitAgreementDocumentForReview(leaseId: string): Promise<void> {
+  return apiPost(`/leases/${leaseId}/agreement/document/submit`)
+}
+
+/** The assigned lawyer approves a party's submitted signed document. */
+export async function approveAgreementDocument(leaseId: string, party: 'Landlord' | 'Tenant'): Promise<void> {
+  return apiPost(`/leases/${leaseId}/agreement/document/approve`, { party })
 }
 
 export interface FundEscrowResponse {

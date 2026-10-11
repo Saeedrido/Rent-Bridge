@@ -22,7 +22,7 @@ interface AgreementMoney {
   needsTenant: boolean
 }
 
-function readStage(lease: { status?: string; signedParties?: unknown }) {
+function readStage(lease: { status?: string; signedParties?: unknown; agreement?: unknown }) {
   const status = String(lease.status ?? '').toLowerCase()
   const parties = Array.isArray(lease.signedParties)
     ? lease.signedParties
@@ -41,16 +41,19 @@ function readStage(lease: { status?: string; signedParties?: unknown }) {
   if (status.includes('fully')) return { stage: 'payment-due' as const, label: 'Payment due' }
   if (status.includes('cancel') || status.includes('declin'))
     return { stage: 'signing' as const, label: 'Cancelled' }
-  if (
-    status.includes('certified') ||
-    status.includes('partial') ||
-    status.includes('awaitingsign')
-  ) {
+
+  // Document-based signing flow.
+  if (status.includes('tenantsigning')) return { stage: 'signing' as const, label: 'Awaiting your signature' }
+  if (status.includes('tenantdocinreview')) return { stage: 'signing' as const, label: 'With lawyer' }
+  if (status.includes('landlordsigning')) return { stage: 'signing' as const, label: 'Awaiting landlord' }
+  if (status.includes('landlorddocinreview')) return { stage: 'signing' as const, label: 'With lawyer' }
+
+  if (status.includes('certified') || status.includes('partial') || status.includes('awaitingsign')) {
     return tenantSigned
       ? { stage: 'signing' as const, label: 'Awaiting landlord' }
       : { stage: 'signing' as const, label: 'Awaiting your signature' }
   }
-  if (status.includes('legal')) return { stage: 'signing' as const, label: 'Lawyer reviewing' }
+  if (status.includes('legal')) return { stage: 'signing' as const, label: 'Lawyer preparing agreement' }
   return { stage: 'signing' as const, label: 'In progress' }
 }
 

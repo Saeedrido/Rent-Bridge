@@ -1,6 +1,6 @@
 import type { Property, PropertyImage } from '@/features/properties/types/property'
 import type { DashboardProperty } from '@/features/dashboard/data/dashboardProperties'
-import type { InspectionRequest, AgreementRecord, PaymentRecord } from '@/features/dashboard/roleDashboards/data'
+import type { InspectionRequest, AgreementRecord, PaymentRecord, AgreementProgress, AgreementReviewProgress } from '@/features/dashboard/roleDashboards/data'
 import type { Inspection, Payment, TenantAgreement, AgreementClause } from '@/features/dashboard/tenant/tenantData'
 import type { SavedProperty } from '@/features/dashboard/tenant/tenantData'
 import type { LeaseRecord } from './leaseApi'
@@ -310,10 +310,68 @@ function leaseStatus(item: Row): string {
   return text(item.status ?? item.state)
 }
 
+/**
+ * Locates the AgreementProgressItem inside whatever envelope it arrived in:
+ * the lease list nests it at `agreement`, the lease detail nests it at
+ * `agreement.progress`, and the agreement endpoint puts it at the top-level
+ * `progress`. Returns an empty row when the lease predates the document flow.
+ */
+function extractProgressRow(item: Row): Row {
+  const agreement = asRow(item.agreement ?? item.agreementDetail)
+  const nested = asRow(agreement.progress)
+  if (Object.keys(nested).length) return nested
+  if (Object.keys(agreement).length && ('hasOriginalDocument' in agreement || 'landlordReview' in agreement)) {
+    return agreement
+  }
+  return asRow(item.progress)
+}
+
+function mapAgreementReview(raw: unknown): AgreementReviewProgress {
+  const r = asRow(raw)
+  const downloadedAt = optionalText(r.downloadedAt)
+  const uploadedAt = optionalText(r.uploadedAt)
+  const submittedAt = optionalText(r.submittedForReviewAt ?? r.submittedAt)
+  const approvedAt = optionalText(r.approvedAt)
+  const uploadedUrl = optionalText(r.uploadedUrl)
+  return {
+    party: text(r.party),
+    downloaded: Boolean(downloadedAt),
+    uploaded: Boolean(uploadedUrl ?? uploadedAt),
+    submitted: Boolean(submittedAt),
+    approved: Boolean(approvedAt),
+    downloadedAt,
+    uploadedAt,
+    submittedAt,
+    approvedAt,
+    uploadedUrl,
+    uploadedFileName: optionalText(r.uploadedFileName),
+  }
+}
+
+export function readAgreementProgress(raw: unknown): AgreementProgress | undefined {
+  const row = extractProgressRow(asRow(raw))
+  if (!Object.keys(row).length) return undefined
+  const originalDocumentUrl = optionalText(row.originalDocumentUrl)
+  return {
+    hasOriginalDocument: row.hasOriginalDocument === true || Boolean(originalDocumentUrl),
+    originalDocumentUrl,
+    originalDocumentFileName: optionalText(row.originalDocumentFileName),
+    originalDocumentUploadedAt: optionalText(row.originalDocumentUploadedAt),
+    isFinalized: row.isFinalized === true,
+    finalDocumentUrl: optionalText(row.finalDocumentUrl),
+    finalDocumentFileName: optionalText(row.finalDocumentFileName),
+    finalizedAt: optionalText(row.finalizedAt),
+    landlord: mapAgreementReview(row.landlordReview),
+    tenant: mapAgreementReview(row.tenantReview),
+  }
+}
+
 export function mapLeaseToInspectionStatus(status: string): Inspection['status'] {
   const value = status.toLowerCase()
   if (value.includes('cancel') || value.includes('declin')) return 'cancelled'
   if (value.includes('fully') || value.includes('partial') || value.includes('certified')) return 'signed'
+  // Document flow statuses all sit after the inspection; show them as in sign-off.
+  if (value.includes('signing') || value.includes('docinreview')) return 'signed'
   if (value.includes('legal')) return 'lawyer-review'
   if (value.includes('confirm')) return 'confirmed'
   return 'requested'
@@ -346,6 +404,11 @@ export function leaseToInspection(raw: unknown): Inspection {
 function mapAgreementStatusForLease(status: string): AgreementRecord['status'] {
   const value = status.toLowerCase()
   if (value.includes('fully')) return 'signed'
+  // Document-based signing flow.
+  if (value === 'landlordsigning') return 'landlord-signing'
+  if (value === 'landlorddocinreview') return 'landlord-review'
+  if (value === 'tenantsigning') return 'tenant-signing'
+  if (value === 'tenantdocinreview') return 'tenant-review'
   if (value.includes('partial')) return 'partially-signed'
   // 'Certified' means the lawyer approved it and it is WAITING for signatures.
   // Mapping it to 'signed' showed a completed contract before anyone signed.
@@ -374,6 +437,7 @@ export function leaseToAgreementRecord(raw: unknown): AgreementRecord {
       ? item.signedParties.map((p: unknown) => text(p))
       : [],
     updated: formatShortDate(item.updatedAt ?? item.createdAt) || 'Updated today',
+    progress: readAgreementProgress(item),
   }
 }
 
@@ -393,13 +457,18 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
   const location = [text(item.area ?? address.area), text(item.city ?? address.city)].filter(Boolean).join(', ')
   const mapped: TenantAgreement['status'] = escrowFunded || status.includes('fully')
     ? 'signed'
-    : status.includes('certified') ||
-        status.includes('partial') ||
-        status.includes('awaitingsign')
+    : status.includes('tenantsigning')
       ? 'awaiting-tenant'
-      : status.includes('legal')
-        ? 'lawyer-review'
-        : 'draft'
+      : status.includes('certified') ||
+          status.includes('partial') ||
+          status.includes('awaitingsign')
+        ? 'awaiting-tenant'
+        : status.includes('legal') ||
+            status.includes('landlordsigning') ||
+            status.includes('landlorddocinreview') ||
+            status.includes('tenantdocinreview')
+          ? 'lawyer-review'
+          : 'draft'
   // GET /leases/{id} nests signatures under `agreement` (LeaseDetailResponse), so
   // reading only the top level returned [] on a fully signed lease and the page
   // tried to sign again. Accept either shape.
@@ -434,6 +503,7 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
     term: text(item.term) || 'Fixed tenancy term',
     date: formatDate(item.createdAt),
     status: mapped,
+    statusRaw: leaseStatus(item),
     signedParties,
     escrowFunded,
     lawyer: {
@@ -453,6 +523,7 @@ export function leaseToTenantAgreement(raw: unknown, clauses: TenantAgreement['c
     feedback,
     totalAmount,
     tenantName: text(tenant.name ?? item.tenantName) || undefined,
+    progress: readAgreementProgress(item),
   } as TenantAgreement
 }
 

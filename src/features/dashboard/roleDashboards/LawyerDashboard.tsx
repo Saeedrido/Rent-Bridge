@@ -17,13 +17,19 @@ import {
   getLeaseAgreement,
   getLeaseAgreementPdf,
   certifyLease,
+  uploadAgreementDocument,
+  approveAgreementDocument,
+  viewAgreementDocument,
 } from '../../../services/api/leaseApi'
+import { uploadFile } from '../../../services/api/uploadApi'
 import {
   agreementTermsToClauses,
   asRow,
   formatDate,
   formatShortDate,
+  readAgreementProgress,
 } from '../../../services/api/mappers'
+import type { AgreementProgress } from './data'
 import { loadWithFallback, apiErrorMessage } from '../../../services/api/fallback'
 import { getUser } from '../../../services/api/tokens'
 import { refreshProfile } from '../../../services/api/authApi'
@@ -38,6 +44,18 @@ interface LawyerLease {
   landlord: string
   status: string
   submitted: string
+  progress?: AgreementProgress
+}
+
+type LawyerStage = 'upload' | 'approve-landlord' | 'approve-tenant' | 'other'
+
+/** Which document-flow action a lease needs from the assigned lawyer, if any. */
+function lawyerStageFor(status: string): LawyerStage {
+  const value = status.toLowerCase()
+  if (value.includes('landlorddocinreview')) return 'approve-landlord'
+  if (value.includes('tenantdocinreview')) return 'approve-tenant'
+  if (value === 'legalreview') return 'upload'
+  return 'other'
 }
 
 interface ReviewState {
@@ -69,6 +87,7 @@ function leaseToLawyerRow(raw: unknown): LawyerLease {
     landlord: str(landlord.name) || str(item.landlordName) || 'Landlord',
     status: str(item.status ?? item.state),
     submitted: formatShortDate(item.updatedAt ?? item.createdAt) || 'Submitted',
+    progress: readAgreementProgress(raw),
   }
 }
 
@@ -77,7 +96,11 @@ function statusLabel(status: string): string {
     Initiated: 'Initiated',
     InspectionRequested: 'Inspection requested',
     InspectionConfirmed: 'Inspection confirmed',
-    LegalReview: 'In review',
+    LegalReview: 'Awaiting document',
+    LandlordSigning: 'Landlord signing',
+    LandlordDocInReview: 'Landlord copy to approve',
+    TenantSigning: 'Tenant signing',
+    TenantDocInReview: 'Tenant copy to approve',
     Certified: 'Certified',
     AwaitingSignatures: 'Awaiting signatures',
     PartiallySigned: 'Partially signed',
@@ -89,6 +112,11 @@ function statusLabel(status: string): string {
   }
   if (labels[status]) return labels[status]
   const lower = status.toLowerCase()
+  if (lower.includes('landlorddocinreview')) return 'Landlord copy to approve'
+  if (lower.includes('tenantdocinreview')) return 'Tenant copy to approve'
+  if (lower === 'legalreview') return 'Awaiting document'
+  if (lower.includes('landlordsigning')) return 'Landlord signing'
+  if (lower.includes('tenantsigning')) return 'Tenant signing'
   if (lower.includes('legal')) return 'In review'
   if (lower.includes('certified')) return 'Certified'
   if (lower.includes('signed')) return 'Signed'
@@ -97,7 +125,7 @@ function statusLabel(status: string): string {
 
 function statusTone(status: string): 'inreview' | 'waiting' | 'signed' {
   const lower = status.toLowerCase()
-  if (lower.includes('legal')) return 'inreview'
+  if (lower.includes('legal') || lower.includes('docinreview')) return 'inreview'
   if (lower.includes('certified') || lower.includes('signed') || lower.includes('escrow') || lower.includes('release')) return 'signed'
   return 'waiting'
 }
@@ -127,6 +155,8 @@ export function LawyerDashboard() {
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<number, boolean>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [docBusy, setDocBusy] = useState(false)
+  const agreementInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let active = true
@@ -211,11 +241,16 @@ export function LawyerDashboard() {
     { id: 'current', label: 'Current review', Icon: AgreementIcon },
   ]
 
-  const deskRows = leases.filter((l) => l.status.toLowerCase() === 'legalreview')
+  const deskRows = leases.filter((l) => lawyerStageFor(l.status) !== 'other')
 
   const notifications: NotificationItem[] = deskRows.map((l) => ({
     id: `lawyer-notif-${l.id}`,
-    text: `The agreement for ${l.title} is awaiting your review.`,
+    text:
+      lawyerStageFor(l.status) === 'upload'
+        ? `Upload the agreement document for ${l.title}.`
+        : lawyerStageFor(l.status) === 'approve-landlord'
+          ? `The landlord's signed copy for ${l.title} is awaiting your approval.`
+          : `The tenant's signed copy for ${l.title} is awaiting your approval.`,
     time: l.submitted,
   }))
 
@@ -271,6 +306,66 @@ export function LawyerDashboard() {
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (err) {
       show(apiErrorMessage(err) || 'Could not download the agreement PDF right now.')
+    }
+  }
+
+  const reloadLeases = async () => {
+    const result = await loadWithFallback(
+      async () => (await listCallerLeases(1, 50)).map(leaseToLawyerRow),
+      [] as LawyerLease[],
+    )
+    setLeases(result.data)
+    if (result.error) setLoadError(result.error)
+  }
+
+  const handleUploadAgreementDoc = async (file: File | undefined) => {
+    if (!activeReviewId || !file || docBusy) {
+      if (agreementInputRef.current) agreementInputRef.current.value = ''
+      return
+    }
+    setDocBusy(true)
+    try {
+      const url = await uploadFile(file)
+      await uploadAgreementDocument(activeReviewId, { url, fileName: file.name })
+      await reloadLeases()
+      show('Agreement document uploaded. The landlord can now sign it.')
+      setActiveReviewId(null)
+      setActiveTab('desk')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not upload the agreement document right now.')
+    } finally {
+      setDocBusy(false)
+      if (agreementInputRef.current) agreementInputRef.current.value = ''
+    }
+  }
+
+  const handleApproveParty = async (party: 'Landlord' | 'Tenant') => {
+    if (!activeReviewId || docBusy) return
+    setDocBusy(true)
+    try {
+      await approveAgreementDocument(activeReviewId, party)
+      await reloadLeases()
+      show(
+        party === 'Landlord'
+          ? "Landlord's copy approved. The tenant can now sign it."
+          : "Tenant's copy approved. The agreement is now fully signed.",
+      )
+      setActiveReviewId(null)
+      setActiveTab('desk')
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not approve this document right now.')
+    } finally {
+      setDocBusy(false)
+    }
+  }
+
+  const handleViewAgreementDoc = async (id: string) => {
+    try {
+      // Streamed through the API so the PDF renders in the browser instead of
+      // being force-downloaded (Cloudinary serves raw files as attachments).
+      await viewAgreementDocument(id)
+    } catch (err) {
+      show(apiErrorMessage(err) || 'Could not open the agreement document right now.')
     }
   }
 
@@ -335,7 +430,7 @@ export function LawyerDashboard() {
                     </p>
                   ) : (
                     leases.map((lease, i) => {
-                      const inReview = lease.status.toLowerCase() === 'legalreview'
+                      const inReview = lawyerStageFor(lease.status) !== 'other'
                       const canDownload =
                         !inReview &&
                         (lease.status.toLowerCase().includes('certified') ||
@@ -418,6 +513,8 @@ export function LawyerDashboard() {
           )
         }
 
+        const stage = lawyerStageFor(activeLease.status)
+
         return (
           <div className="px-[clamp(16px,4vw,40px)]">
             <PageHeading
@@ -446,6 +543,103 @@ export function LawyerDashboard() {
                   </p>
                 )}
               </div>
+
+              {stage !== 'other' && (
+                <div className="rounded-xl border border-sage bg-white p-4 sm:p-6 space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-ink">
+                      {stage === 'upload'
+                        ? 'Upload the agreement document'
+                        : stage === 'approve-landlord'
+                          ? "Review the landlord's signed copy"
+                          : "Review the tenant's signed copy"}
+                    </h3>
+                    <p className="mt-1 text-sm text-mist">
+                      {stage === 'upload'
+                        ? 'Upload the tenancy agreement you have prepared. The landlord will download, sign and return it.'
+                        : stage === 'approve-landlord'
+                          ? 'The landlord has signed and returned the agreement. Approve it to let the tenant sign.'
+                          : 'The tenant has signed and returned the agreement. Approve it to mark the agreement fully signed.'}
+                    </p>
+                  </div>
+
+                  {stage === 'upload' ? (
+                    <>
+                      {activeLease.progress?.hasOriginalDocument && (
+                        <div className="rounded-lg border border-sage bg-sage-soft/40 px-4 py-3 text-sm text-[#374151]">
+                          Current document:{' '}
+                          <span className="font-medium text-forest">
+                            {activeLease.progress.originalDocumentFileName || 'uploaded agreement'}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="button"
+                          onClick={() => agreementInputRef.current?.click()}
+                          disabled={docBusy}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {docBusy
+                            ? 'Uploading…'
+                            : activeLease.progress?.hasOriginalDocument
+                              ? 'Replace document'
+                              : 'Upload agreement document'}
+                        </button>
+                        {activeLease.progress?.hasOriginalDocument && (
+                          <button
+                            type="button"
+                            onClick={() => handleViewAgreementDoc(activeLease.id)}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                          >
+                            <DownloadIcon /> View document
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-sage bg-sage-soft/40 px-4 py-3 text-sm text-[#374151]">
+                        Uploaded copy:{' '}
+                        <span className="font-medium text-forest">
+                          {(stage === 'approve-landlord'
+                            ? activeLease.progress?.landlord.uploadedFileName
+                            : activeLease.progress?.tenant.uploadedFileName) || 'signed agreement'}
+                        </span>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleViewAgreementDoc(activeLease.id)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                        >
+                          <DownloadIcon /> Open signed copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveParty(stage === 'approve-landlord' ? 'Landlord' : 'Tenant')}
+                          disabled={docBusy}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {docBusy
+                            ? 'Approving…'
+                            : stage === 'approve-landlord'
+                              ? "Approve landlord's copy"
+                              : "Approve tenant's copy"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <input
+                ref={agreementInputRef}
+                type="file"
+                accept="application/pdf,image/*,.doc,.docx"
+                className="hidden"
+                onChange={(e) => void handleUploadAgreementDoc(e.target.files?.[0])}
+              />
 
               {reviewLoading ? (
                 <div className="rounded-xl border border-sage bg-white p-8 text-sm text-mist">
@@ -525,33 +719,37 @@ export function LawyerDashboard() {
                     </ul>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadPdf(activeLease.id)}
-                      disabled={submitting}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-50"
-                    >
-                      <DownloadIcon />
-                      Download PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCertify}
-                      disabled={!allChecked || review.certified || submitting}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {review.certified
-                        ? 'Agreement certified'
-                        : submitting
-                          ? 'Certifying…'
-                          : 'Certify & request signature'}
-                    </button>
-                  </div>
-                  {!allChecked && !review.certified && (
-                    <p className="text-[13px] text-mist text-right sm:text-left">
-                      Verify all clauses to enable certification.
-                    </p>
+                  {stage === 'other' && (
+                    <>
+                      <div className="flex flex-col sm:flex-row justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPdf(activeLease.id)}
+                          disabled={submitting}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-5 py-2.5 text-[15px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft disabled:opacity-50"
+                        >
+                          <DownloadIcon />
+                          Download PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCertify}
+                          disabled={!allChecked || review.certified || submitting}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {review.certified
+                            ? 'Agreement certified'
+                            : submitting
+                              ? 'Certifying…'
+                              : 'Certify & request signature'}
+                        </button>
+                      </div>
+                      {!allChecked && !review.certified && (
+                        <p className="text-[13px] text-mist text-right sm:text-left">
+                          Verify all clauses to enable certification.
+                        </p>
+                      )}
+                    </>
                   )}
                   {review.fullySigned && (
                     <p className="text-[13px] text-mist text-right sm:text-left">
