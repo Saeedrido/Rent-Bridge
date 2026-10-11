@@ -259,7 +259,17 @@ export function TenantAgreementPage() {
     {
       key: 'upload',
       label: 'Lawyer uploads the agreement',
-      done: Boolean(progress?.hasOriginalDocument),
+      // The lawyer's source file is purged once the tenant's signed copy is
+      // approved/finalized, which flips hasOriginalDocument back to false and
+      // made this step look incomplete on a fully completed flow. The original
+      // must have existed for the landlord to have signed, so any later progress
+      // (or finalization) proves the upload happened.
+      done: Boolean(
+        progress?.hasOriginalDocument ||
+          progress?.isFinalized ||
+          progress?.landlord.uploaded ||
+          progress?.landlord.approved,
+      ),
       at: progress?.originalDocumentUploadedAt,
     },
     {
