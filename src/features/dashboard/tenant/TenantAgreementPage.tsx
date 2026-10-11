@@ -207,11 +207,21 @@ export function TenantAgreementPage() {
   // the source document (or the lease status is one of the document statuses).
   const progress = agreement.progress
   const statusRaw = (agreement.statusRaw ?? '').toLowerCase()
+  // Once the lawyer approves the tenant's signed copy the lease becomes
+  // FullySigned and the lawyer's source document is purged, so
+  // `hasOriginalDocument` flips back to false. Without the finalized/fully/escrow
+  // checks the page fell back to the legacy certify-then-sign UI, whose pay
+  // button calls the old /sign endpoint that rejects a FullySigned lease with
+  // "Agreement must be certified before signing". Payment must key off the
+  // document flow alone.
   const docFlow = Boolean(
     progress &&
       (progress.hasOriginalDocument ||
+        progress.isFinalized ||
+        agreement.escrowFunded ||
         statusRaw.includes('signing') ||
-        statusRaw.includes('docinreview')),
+        statusRaw.includes('docinreview') ||
+        statusRaw.includes('fully')),
   )
   type DocStage =
     | 'preparing'
