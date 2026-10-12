@@ -12,7 +12,7 @@ import {
   DataErrorBanner,
   useToast,
 } from './shared'
-import { Button, DashboardPropertyCardSkeleton } from '../../../components/ui'
+import { DashboardPropertyCardSkeleton } from '../../../components/ui'
 import {
   ManagedProperty,
   InspectionRequest,
@@ -602,7 +602,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
             e.stopPropagation()
             setUnpublishConfirm(prop.id)
           }}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-3 py-2 text-[12px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft sm:w-auto sm:px-4 sm:text-sm"
         >
           Unpublish
         </button>
@@ -625,7 +625,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
             show(message || 'Could not publish this listing right now.')
           }
         }}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-flame-dark"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-flame px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-flame-dark sm:w-auto sm:px-4 sm:text-sm"
       >
         Publish
       </button>
@@ -641,22 +641,13 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
               title="My properties"
               subtitle={`${properties.length} properties \u00B7 ${publishedCount} published`}
               action={
-                <>
-                  <button
-                    type="button"
-                    onClick={() => window.location.reload()}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft mr-3"
-                  >
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate(role === 'landlord' ? '/dashboard/landlord/publish' : '/dashboard/caretaker/publish')}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-flame px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-flame-dark"
-                  >
-                    + Publish another apartment
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => navigate(role === 'landlord' ? '/dashboard/landlord/publish' : '/dashboard/caretaker/publish')}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-flame px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flame-dark sm:px-5 sm:py-2.5 sm:text-[15px]"
+                >
+                  + Publish another apartment
+                </button>
               }
             />
             {propertiesLoading ? (
@@ -670,7 +661,7 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                 />
               </div>
             ) : (
-              <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
                 {properties.map((prop, i) => {
                   const isDraft = !prop.published;
                   const canSubmitForReview = isDraft && !prop.verified && verifiedLabel.includes('Verified');
@@ -698,22 +689,22 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                           {prop.verified ? 'VERIFIED' : canSubmitForReview ? 'READY FOR REVIEW' : isDraft ? 'DRAFT' : 'UNPUBLISHED'}
                         </StatusPill>
                       </div>
-                      <div className="flex flex-col flex-1 p-6">
-                        <p className="text-sm text-mist">{prop.location}</p>
-                        <h3 className="mt-1 font-serif text-[22px] font-semibold leading-snug text-forest group-hover:underline">
+                      <div className="flex flex-col flex-1 p-3 sm:p-6">
+                        <p className="text-[11px] text-mist sm:text-sm">{prop.location}</p>
+                        <h3 className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-snug text-forest group-hover:underline sm:text-[22px]">
                           {prop.title}
                         </h3>
-                        <div className="mt-2 flex items-baseline gap-1">
-                          <span className="text-[22px] font-bold text-ink">{naira(prop.rent)}</span>
-                          <span className="text-sm text-mist">{rentFrequencyLabel(prop.rentFrequency)}</span>
+                        <div className="mt-1.5 flex flex-wrap items-baseline gap-1 sm:mt-2">
+                          <span className="text-[15px] font-bold text-ink sm:text-[22px]">{naira(prop.rent)}</span>
+                          <span className="text-[11px] text-mist sm:text-sm">{rentFrequencyLabel(prop.rentFrequency)}</span>
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-mist">
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-mist sm:text-xs">
                           <span className="capitalize">{prop.typeLabel}</span>
                           {prop.beds > 0 && <span>· {prop.beds} bed</span>}
                           {prop.baths > 0 && <span>· {prop.baths} bath</span>}
                         </div>
-                        <div className="my-5 border-t border-sage-line" />
-                        <div className="mt-auto flex items-center justify-between gap-3">
+                        <div className="my-3 border-t border-sage-line sm:my-5" />
+                        <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
               {renderActionButtons(prop, canSubmitForReview)}
                           <button
                             type="button"
@@ -738,11 +729,11 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
                                 if (message) show(message);
                               }
                             }}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50"
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:border-red-400 hover:bg-red-50 sm:w-auto sm:px-4 sm:text-sm"
                           >
                             Delete
                           </button>
-                          <span className="text-sm text-mist shrink-0">
+                          <span className="text-[11px] text-mist sm:text-sm">
                             {inspections.filter((ir) => ir.propertyId === prop.id).length} inspection requests
                           </span>
                         </div>
@@ -784,14 +775,6 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
             <PageHeading
               title="Inspection requests"
               subtitle={`${inspections.filter((i) => i.status === 'pending').length} awaiting your response`}
-              action={
-                <Button
-                  variant="outline"
-                  onClick={() => window.location.reload()}
-                >
-                  Refresh
-                </Button>
-              }
             />
             <div className="mt-8 space-y-3">
               {inspections.length === 0 ? (
@@ -1142,13 +1125,13 @@ export function LandlordCaretakerDashboard({ role }: { role: 'landlord' | 'caret
         return (
           <>
             <PageHeading title="Payments" subtitle="Rent collected across your listings." />
-            <div className="mt-8 rounded-xl border border-sage bg-white p-6 grid grid-cols-2 divide-x divide-sage">
-              <div className="px-4 py-2">
+            <div className="mt-8 grid grid-cols-2 divide-x divide-sage rounded-xl border border-sage bg-white p-4 sm:p-6">
+              <div className="px-3 py-2 sm:px-4">
                 <p className="text-xs font-bold uppercase tracking-[0.07em] text-mist">Collected</p>
                 <p className="mt-1 font-serif text-2xl font-bold text-ink">{naira(collected)}</p>
                 <p className="text-sm text-mist">{paid.length} payment{paid.length === 1 ? '' : 's'}</p>
               </div>
-              <div className="px-4 py-2">
+              <div className="px-3 py-2 sm:px-4">
                 <p className="text-xs font-bold uppercase tracking-[0.07em] text-mist">Outstanding</p>
                 <p className="mt-1 font-serif text-2xl font-bold text-ink">{naira(pendingTotal)}</p>
                 <p className="text-sm text-mist">{pendingPmts.length} pending</p>

@@ -372,7 +372,7 @@ export function AdminDashboard() {
         }
       />
 
-      <div className="overflow-hidden rounded-xl border border-sage bg-white">
+      <div className="overflow-x-auto rounded-xl border border-sage bg-white">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead>
             <tr className="border-b border-sage-line bg-sand/60 text-xs font-bold uppercase tracking-[0.07em] text-mist">
@@ -467,18 +467,11 @@ export function AdminDashboard() {
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-sage bg-white px-4 py-2 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
-            >
-              Refresh
-            </button>
           </div>
         }
       />
 
-      <div className="overflow-hidden rounded-xl border border-sage bg-white">
+      <div className="overflow-x-auto rounded-xl border border-sage bg-white">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
             <tr className="border-b border-sage-line bg-sand/60 text-xs font-bold uppercase tracking-[0.07em] text-mist">

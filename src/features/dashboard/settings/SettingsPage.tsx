@@ -443,7 +443,7 @@ export function SettingsContent({
       />
       <div className="mt-8 grid items-start gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
         <nav aria-label="Settings sections" className="lg:sticky lg:top-36">
-          <ul className="flex gap-1 overflow-x-auto no-scrollbar lg:flex-col lg:overflow-visible">
+          <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:flex-col lg:gap-1">
             {sections.map(({ id, label, Icon }) => {
               const isActive = id === section
               return (
@@ -453,7 +453,7 @@ export function SettingsContent({
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => setSection(id)}
                     className={cn(
-                      'flex w-full cursor-pointer items-center gap-3 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-200',
+                      'flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-colors duration-200 sm:gap-3 sm:px-4 sm:text-sm',
                       isActive
                         ? 'bg-forest text-white'
                         : 'text-mist hover:bg-sage-soft hover:text-forest',
@@ -465,12 +465,12 @@ export function SettingsContent({
                 </li>
               )
             })}
-            <li className="shrink-0 pt-4 lg:mt-4 lg:border-t lg:border-sage">
+            <li className="col-span-2 mt-1 sm:col-span-3 lg:col-auto lg:mt-4 lg:border-t lg:border-sage">
               <button
                 type="button"
                 disabled={loggingOut}
                 onClick={handleLogout}
-                className="flex w-full cursor-pointer items-center gap-3 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-semibold text-[#B42318] transition-colors duration-200 hover:bg-[#FDE8E8] disabled:opacity-60"
+                className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[#B42318] transition-colors duration-200 hover:bg-[#FDE8E8] disabled:opacity-60 sm:gap-3 sm:px-4 sm:text-sm"
               >
                 <LogOutIcon />
                 {loggingOut ? 'Signing out…' : 'Log out'}

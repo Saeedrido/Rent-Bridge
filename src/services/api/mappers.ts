@@ -404,6 +404,11 @@ export function leaseToInspection(raw: unknown): Inspection {
 function mapAgreementStatusForLease(status: string): AgreementRecord['status'] {
   const value = status.toLowerCase()
   if (value.includes('fully')) return 'signed'
+  // Once money is in escrow the lease leaves the signature statuses
+  // (FundedInEscrow/Releasing/Released). Without this it fell through to
+  // 'draft', so a completed and paid agreement reverted to showing
+  // "Start Legal Review" on the landlord's Agreement tab.
+  if (value.includes('funded') || value.includes('releas')) return 'signed'
   // Document-based signing flow.
   if (value === 'landlordsigning') return 'landlord-signing'
   if (value === 'landlorddocinreview') return 'landlord-review'

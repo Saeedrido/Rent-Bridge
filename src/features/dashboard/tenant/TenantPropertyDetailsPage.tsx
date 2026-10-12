@@ -285,7 +285,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
             Back to properties
           </Link>
 
-          <div ref={featuredRef} className="relative overflow-hidden rounded-2xl bg-white" style={{ height: 520 }}>
+          <div ref={featuredRef} className="relative h-[300px] overflow-hidden rounded-2xl bg-white sm:h-[420px] lg:h-[520px]">
             {isVideoPlaying && videoUrl && (
               <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90">
                 <button
@@ -417,7 +417,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
                 <h3 className="font-semibold uppercase tracking-[0.1em] text-[13px] text-forest mb-4">
                   Spec sheet
                 </h3>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
                   <div className="rounded-lg border border-sage p-4 text-center">
                     <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">BEDROOMS</p>
                     <p className="mt-1 font-serif text-2xl font-bold text-ink">{property.beds}</p>
@@ -430,7 +430,7 @@ const featuredRef = useRef<HTMLDivElement>(null)
                     <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">TYPE</p>
                     <p className="mt-1 font-serif text-xl font-bold text-ink capitalize">{property.typeLabel}</p>
                   </div>
-                  <div className="rounded-lg border border-sage p-4 text-center col-span-3 sm:col-span-1">
+                  <div className="rounded-lg border border-sage p-4 text-center col-span-2 sm:col-span-1">
                     <p className="text-xs font-semibold uppercase tracking-[0.05em] text-mist">AVAILABLE</p>
                     <p className="mt-1 font-serif text-xl font-bold text-ink">{availableFrom ? formatDate(availableFrom) : '—'}</p>
                   </div>

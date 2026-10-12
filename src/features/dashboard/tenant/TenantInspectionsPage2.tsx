@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeading, EmptyState, DataErrorBanner } from '../roleDashboards/shared'
-import { Button } from '../../../components/ui'
 import { InspectionCard } from './InspectionCard'
 import { loadWithFallback } from '../../../services/api/fallback'
 import { listCallerLeases } from '../../../services/api/leaseApi'
@@ -10,7 +9,7 @@ import { leaseToInspection } from '../../../services/api/mappers'
 export function TenantInspectionsPage() {
   const [inspections, setInspections] = useState([] as ReturnType<typeof leaseToInspection>[])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [, setLoading] = useState(false)
   const navigate = useNavigate()
 
   const loadInspections = async () => {
@@ -41,15 +40,6 @@ export function TenantInspectionsPage() {
       <PageHeading 
         title="Inspections" 
         subtitle="Your scheduled property inspections"
-        action={
-          <Button 
-            variant="outline"
-            onClick={loadInspections}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
-        }
       />
       <div className="mt-8">
         {inspections.length === 0 ? (

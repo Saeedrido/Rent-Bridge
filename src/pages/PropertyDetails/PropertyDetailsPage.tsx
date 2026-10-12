@@ -104,7 +104,7 @@ export default function PropertyDetailsPage() {
         {related.length > 0 && (
           <section className="mt-14">
             <h2 className="font-serif text-2xl font-semibold text-green-dark">More in {property.city}</h2>
-            <div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3">
               {related.map((p) => (
                 <PropertyCard key={p.id} property={p} />
               ))}

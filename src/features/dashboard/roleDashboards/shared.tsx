@@ -452,7 +452,7 @@ export function PageHeading({
         </h1>
         {subtitle && <p className="mt-2 text-[15px] text-mist">{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="shrink-0 self-end sm:self-auto">{action}</div>}
     </div>
   )
 }

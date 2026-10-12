@@ -126,31 +126,34 @@ export function RoleDashboardShell({
             </div>
 
             {/* Navigation row - full width, left-aligned, horizontally scrollable on mobile */}
-            <nav className="border-t border-sage no-scrollbar overflow-x-auto" aria-label="Dashboard sections">
-              <ul className="flex min-w-max items-stretch gap-1 flex-nowrap">
-                {tabs.map(({ id, label, Icon }) => {
-                  const isActive = id === active
-                  return (
-                    <li key={id}>
-                      <button
-                        type="button"
-                        onClick={() => onChange(id)}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={cn(
-                          'flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors shrink-0',
-                          isActive
-                            ? 'border-flame text-forest'
-                            : 'border-transparent text-mist hover:text-forest',
-                        )}
-                      >
-                        <Icon className={isActive ? 'text-flame' : 'text-mist'} />
-                        {label}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </nav>
+            <div className="relative">
+              <nav className="border-t border-sage no-scrollbar overflow-x-auto" aria-label="Dashboard sections">
+                <ul className="flex min-w-max items-stretch gap-1 flex-nowrap">
+                  {tabs.map(({ id, label, Icon }) => {
+                    const isActive = id === active
+                    return (
+                      <li key={id}>
+                        <button
+                          type="button"
+                          onClick={() => onChange(id)}
+                          aria-current={isActive ? 'page' : undefined}
+                          className={cn(
+                            'flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-medium transition-colors shrink-0 sm:px-4 sm:text-sm',
+                            isActive
+                              ? 'border-flame text-forest'
+                              : 'border-transparent text-mist hover:text-forest',
+                          )}
+                        >
+                          <Icon className={isActive ? 'text-flame' : 'text-mist'} />
+                          {label}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </nav>
+              <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent md:hidden" aria-hidden="true" />
+            </div>
           </div>
         </header>
 

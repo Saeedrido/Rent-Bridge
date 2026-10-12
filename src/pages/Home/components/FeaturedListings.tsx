@@ -20,7 +20,7 @@ export function FeaturedListings() {
             <Spinner className="h-7 w-7" />
           </div>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3">
             {featured.map((p) => (
               <PropertyCard key={p.id} property={p} />
             ))}

@@ -90,14 +90,14 @@ return (
             }
           />
         ) : (
-          <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
             {sortedProperties.map((property) => (
               <article
                 key={property.id}
                 onClick={() => handlePropertyClick(property)}
                 className="group rounded-xl border border-sage bg-white overflow-hidden transition-shadow hover:shadow-md cursor-pointer"
               >
-                <div className="relative" style={{ height: 220, background: '#E7E2D8' }}>
+                <div className="relative aspect-[4/3] bg-[#E7E2D8] sm:aspect-auto sm:h-[220px]">
                   <img
                     src={property.image}
                     alt={property.title}
@@ -109,32 +109,32 @@ return (
                       e.stopPropagation()
                       handleRemoveFromSaved(property.id)
                     }}
-                    className="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-flame transition-colors hover:bg-white hover:text-flame-dark"
+                    className="absolute top-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-flame transition-colors hover:bg-white hover:text-flame-dark sm:top-3 sm:right-3 sm:h-9 sm:w-9"
                     aria-label="Remove from saved"
                   >
-                    <HeartIcon className="w-5 h-5 fill-current" />
+                    <HeartIcon className="h-4 w-4 fill-current sm:h-5 sm:w-5" />
                   </button>
                   {property.verified && (
-                    <span className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded bg-orange px-2 py-1 text-[11px] font-bold uppercase tracking-[.06em] text-white">
+                    <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded bg-orange px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[.06em] text-white sm:bottom-3 sm:right-3 sm:gap-1.5 sm:px-2 sm:py-1 sm:text-[11px]">
                       Verified
                     </span>
                   )}
                 </div>
-                <div className="p-5">
-                  <p className="text-sm text-mist">{property.location}</p>
-                  <h3 className="mt-1 font-serif text-lg font-semibold text-forest group-hover:underline line-clamp-1">
+                <div className="p-3 sm:p-5">
+                  <p className="text-[11px] text-mist sm:text-sm">{property.location}</p>
+                  <h3 className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-snug text-forest group-hover:underline sm:text-lg">
                     {property.title}
                   </h3>
-                  <div className="mt-2 flex flex-wrap gap-3 text-sm text-mist">
+                  <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-mist sm:gap-3 sm:text-sm">
                     <span>{property.beds} bed</span>
                     <span>{property.baths} bath</span>
                     <span>{property.typeLabel}</span>
                   </div>
-                  <div className="mt-3 flex items-baseline gap-1">
-                    <span className="text-[22px] font-bold text-ink">{property.price.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 })}</span>
-                    <span className="text-sm text-mist">{rentFrequencyLabel(property.rentFrequency)}</span>
+                  <div className="mt-2 flex flex-wrap items-baseline gap-1 sm:mt-3">
+                    <span className="text-[15px] font-bold text-ink sm:text-[22px]">{property.price.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 })}</span>
+                    <span className="text-[11px] text-mist sm:text-sm">{rentFrequencyLabel(property.rentFrequency)}</span>
                   </div>
-                  <div className="mt-2 text-sm text-mist">
+                  <div className="mt-1.5 text-[11px] text-mist sm:mt-2 sm:text-sm">
                     {property.availableFrom
                       ? `Available from ${shortDate(property.availableFrom)}`
                       : `Saved ${shortDate(property.savedAt) || 'just now'}`}
@@ -145,7 +145,7 @@ return (
                       e.stopPropagation()
                       handlePropertyClick(property)
                     }}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-4 py-2.5 text-sm font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft"
+                    className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-forest/30 bg-white px-3 py-2 text-[12px] font-semibold text-forest transition-colors hover:border-forest hover:bg-sage-soft sm:mt-4 sm:px-4 sm:py-2.5 sm:text-sm"
                   >
                     View property
                   </button>

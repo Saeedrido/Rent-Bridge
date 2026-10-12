@@ -46,13 +46,13 @@ export function SkeletonDashboardPropertyCard() {
   return (
     <article className="anim-rise group flex flex-col overflow-hidden rounded-xl border border-sage bg-white">
       <Skeleton className="relative flex-shrink-0 aspect-[16/10] w-full" />
-      <div className="flex flex-col flex-1 p-6 space-y-3">
+      <div className="flex flex-col flex-1 p-4 space-y-3 sm:p-6">
         <Skeleton className="h-4 w-1/2" />
         <Skeleton className="h-6 w-3/4" />
         <Skeleton className="h-8 w-1/3" />
         <SkeletonText lines={2} />
-        <Skeleton className="my-5 h-px w-full" />
-        <div className="mt-auto flex items-center justify-between gap-3">
+        <Skeleton className="my-4 h-px w-full sm:my-5" />
+        <div className="mt-auto flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <Skeleton className="h-10 w-24" />
           <Skeleton className="h-10 w-20" />
           <Skeleton className="h-5 w-24 shrink-0" />
@@ -77,7 +77,7 @@ export function SkeletonPropertyGallery() {
 
 export function SkeletonListingView({ count = 6 } = {}) {
   return (
-    <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 sm:gap-6 xl:grid-cols-3">
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonPropertyCard key={i} />
       ))}

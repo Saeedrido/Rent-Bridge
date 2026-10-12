@@ -8,7 +8,7 @@ export function PropertyGallery({ images }: { images: PropertyImageType[] }) {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-card border border-green/15 bg-[#E7E2D8]" style={{ height: 420 }}>
+      <div className="h-[240px] overflow-hidden rounded-card border border-green/15 bg-[#E7E2D8] sm:h-[340px] lg:h-[420px]">
         <PropertyImage src={current.url} alt={current.alt} eager />
       </div>
       {images.length > 1 && (

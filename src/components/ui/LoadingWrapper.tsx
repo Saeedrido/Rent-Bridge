@@ -32,7 +32,7 @@ export function DashboardPropertyCardSkeleton({ count = 4 } = {}) {
     <LoadingWrapper 
       sectionId="dashboard-properties" 
       skeleton={
-        <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
           {Array.from({ length: count }).map((_, i) => (
             <SkeletonDashboardPropertyCard key={i} />
           ))}
